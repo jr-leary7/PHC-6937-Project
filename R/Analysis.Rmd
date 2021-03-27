@@ -1,0 +1,81 @@
+---
+title: "PHC 6937 (Data Visualization) Final Project"
+author: "Jack Leary"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: journal
+    highlight: tango
+    df_print: kable
+    toc: true
+    toc_float: true
+    code_folding: show
+    code_download: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+# Libaries
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(kableExtra)
+```
+
+# Data
+
+There are several samples here, so we'll need to create a dictionary of the samplenames and the sample types. 
+
+```{r}
+dir_names <- c("GSM4679532", "GSM4679533", "GSM4679534", "GSM4679535", "GSM4679536", 
+               "GSM4679537", "GSM4679538", "GSM4679539", "GSM4679540", "GSM4679541", 
+               "GSM4679542", "GSM4679543", "GSM4679544", "GSM4679545", "GSM4679546", "GSM4679547")
+sample_names <- c("P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08", "P09", "P10", 
+                  "MET01", "MET02", "MET03", "MET04", "MET05", "MET06")
+sample_types <- c(rep("Primary", 10), rep("Metastatic", 6))
+sample_dict <- data.frame(Directory = dir_names, 
+                          Sample = sample_names, 
+                          Type = sample_types)
+sample_dict %>% 
+  kbl(booktabs = TRUE, caption = "Sample Dictionary") %>% 
+  kable_minimal("hover", html_font = "Avenir", full_width = FALSE)
+```
+
+# Replicating Lin *et al*
+
+First, we loop across the samples, create `Seurat` objects, and normalize expression and identify variable genes. 
+
+```{r}
+obj_list <- list()
+for (i in seq(sample_dict$Directory)) {
+  file <- paste0("~/Desktop/Data/Lin et al/GSE154778_RAW/", sample_dict$Directory[i])
+  counts <- Read10X(file)
+  seurat_obj <- CreateSeuratObject(counts, 
+                                   project = sample_dict$Sample[i], 
+                                   min.cells = 3, 
+                                   min.features = 1000)
+  seurat_obj <- NormalizeData(object = seurat_obj, verbose = FALSE)
+  seurat_obj <- FindVariableFeatures(object = seurat_obj, verbose = FALSE)
+  obj_list[[i]] <- seurat_obj
+}
+```
+
+Next we integrate all the samples into one `Seurat` object. 
+
+```{r}
+integration_genes <- SelectIntegrationFeatures(object.list = obj_list)
+integration_anchors <- FindIntegrationAnchors(object.list = obj_list, 
+                                              anchor.features = integration_genes, 
+                                              verbose = FALSE)
+pdac_orig <- IntegrateData(anchorset = integration_anchors)
+```
+
+
+# New Methodology
+
