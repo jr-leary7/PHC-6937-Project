@@ -53,6 +53,8 @@ sample_dict %>%
 
 # Replicating Lin *et al*
 
+## Dataset Integration
+
 First, we loop across the samples, create `Seurat` objects, and normalize expression and identify variable genes. 
 
 ```{r}
@@ -75,14 +77,45 @@ Next we integrate all the samples into one `Seurat` object.
 ```{r}
 integration_genes <- SelectIntegrationFeatures(object.list = obj_list, verbose = FALSE)
 integration_anchors <- FindIntegrationAnchors(object.list = obj_list, 
+                                              k.filter = 50, 
                                               anchor.features = integration_genes, 
                                               verbose = FALSE)
 pdac_orig <- IntegrateData(anchorset = integration_anchors, 
                            k.weight = 50, 
                            verbose = FALSE)
+DefaultAssay(pdac_orig) <- "integrated"
+```
+
+## Preprocessing
+
+```{r}
+pdac_orig <- ScaleData(pdac_orig, verbose = FALSE)
+pdac_orig <- RunPCA(pdac_orig, 
+                    npcs = 30, 
+                    verbose = FALSE, 
+                    seed.use = 629)
+pdac_orig <- RunUMAP(pdac_orig, 
+                     reduction = "pca", 
+                     dims = 1:20, 
+                     n.components = 2, 
+                     seed.use = 629, 
+                     verbose = FALSE)
+pdac_orig <- FindNeighbors(pdac_orig, 
+                           reduction = "pca", 
+                           dims = 1:20, 
+                           verbose = FALSE)
+pdac_orig <- FindClusters(pdac_orig, 
+                          resolution = 0.5, 
+                          verbose = FALSE, 
+                          random.seed = 629)
+# pdac_orig <- AddModuleScore(pdac_orig, seed = 629)  // don't know what gene lists they used
 ```
 
 
+
+```{r}
+DimPlot(pdac_orig)
+```
 
 
 # New Methodology
