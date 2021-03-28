@@ -29,6 +29,9 @@ options(future.globals.maxSize = 2000 * 1024^2)
 library(dplyr)
 library(Seurat)
 library(ggplot2)
+library(SCISSORS)
+library(patchwork)
+library(paletteer)
 library(kableExtra)
 ```
 
@@ -55,7 +58,7 @@ sample_dict %>%
 
 ## Dataset Integration
 
-First, we loop across the samples, create `Seurat` objects, and normalize expression and identify variable genes. 
+First, we loop across the samples, create `Seurat` objects, and normalize expression and identify variable genes. The first 10 samples are primary tumors, and the next 6 are metastatic. 
 
 ```{r}
 obj_list <- list()
@@ -70,51 +73,113 @@ for (i in seq(sample_dict$Directory)) {
   seurat_obj <- FindVariableFeatures(object = seurat_obj, nfeatures = 2000, verbose = FALSE)
   obj_list[[i]] <- seurat_obj
 }
+primary_obj <- obj_list[1:10]
+meta_obj <- obj_list[11:16]
 ```
 
-Next we integrate all the samples into one `Seurat` object. 
+```{r, echo=FALSE}
+rm(counts, obj_list, seurat_obj, dir_names, file, sample_names, sample_types)
+```
+
+Next we integrate all the samples into one `Seurat` object. We'll start with the primary samples. 
 
 ```{r}
-integration_genes <- SelectIntegrationFeatures(object.list = obj_list, verbose = FALSE)
-integration_anchors <- FindIntegrationAnchors(object.list = obj_list, 
+integration_genes <- SelectIntegrationFeatures(object.list = primary_obj, verbose = FALSE)
+integration_anchors <- FindIntegrationAnchors(object.list = primary_obj, 
                                               k.filter = 50, 
                                               anchor.features = integration_genes, 
                                               verbose = FALSE)
-pdac_orig <- IntegrateData(anchorset = integration_anchors, 
+primary_orig <- IntegrateData(anchorset = integration_anchors, 
+                              k.weight = 50, 
+                              verbose = FALSE)
+DefaultAssay(primary_orig) <- "integrated"
+```
+
+And we repeat the process for the metastatic samples. 
+
+```{r}
+integration_genes <- SelectIntegrationFeatures(object.list = meta_obj, verbose = FALSE)
+integration_anchors <- FindIntegrationAnchors(object.list = meta_obj, 
+                                              k.filter = 50, 
+                                              anchor.features = integration_genes, 
+                                              verbose = FALSE)
+meta_orig <- IntegrateData(anchorset = integration_anchors, 
                            k.weight = 50, 
                            verbose = FALSE)
-DefaultAssay(pdac_orig) <- "integrated"
+DefaultAssay(meta_orig) <- "integrated"
 ```
 
 ## Preprocessing
 
+### Primary Tumors
+
 ```{r}
-pdac_orig <- ScaleData(pdac_orig, verbose = FALSE)
-pdac_orig <- RunPCA(pdac_orig, 
+primary_orig <- ScaleData(primary_orig, verbose = FALSE)
+primary_orig <- RunPCA(primary_orig, 
+                       npcs = 30, 
+                       verbose = FALSE, 
+                       seed.use = 629)
+primary_orig <- RunUMAP(primary_orig, 
+                        reduction = "pca", 
+                        dims = 1:30, 
+                        n.components = 2, 
+                        seed.use = 629, 
+                        verbose = FALSE)
+primary_orig <- FindNeighbors(primary_orig, 
+                              reduction = "pca", 
+                              dims = 1:30, 
+                              verbose = FALSE)
+primary_orig <- FindClusters(primary_orig, 
+                             resolution = 0.3, 
+                             verbose = FALSE, 
+                             random.seed = 629)
+```
+
+### Metastatic Tumors
+
+Now we repeat the preprocessing on the metastatic tumors. 
+
+```{r}
+meta_orig <- ScaleData(meta_orig, verbose = FALSE)
+meta_orig <- RunPCA(meta_orig, 
                     npcs = 30, 
                     verbose = FALSE, 
                     seed.use = 629)
-pdac_orig <- RunUMAP(pdac_orig, 
+meta_orig <- RunUMAP(meta_orig, 
                      reduction = "pca", 
-                     dims = 1:20, 
+                     dims = 1:30, 
                      n.components = 2, 
                      seed.use = 629, 
                      verbose = FALSE)
-pdac_orig <- FindNeighbors(pdac_orig, 
+meta_orig <- FindNeighbors(meta_orig, 
                            reduction = "pca", 
-                           dims = 1:20, 
+                           dims = 1:30, 
                            verbose = FALSE)
-pdac_orig <- FindClusters(pdac_orig, 
-                          resolution = 0.5, 
+meta_orig <- FindClusters(meta_orig, 
+                          resolution = 0.3, 
                           verbose = FALSE, 
                           random.seed = 629)
-# pdac_orig <- AddModuleScore(pdac_orig, seed = 629)  // don't know what gene lists they used
 ```
 
-
+### Visualization
 
 ```{r}
-DimPlot(pdac_orig)
+p0 <- DimPlot(primary_orig) + 
+      labs(x = "UMAP 1", y = "UMAP 2", title = "Primary Tumors") + 
+      scale_color_paletteer_d("miscpalettes::pastel") + 
+      theme_yehlab() + 
+      theme(axis.title = element_text(hjust = 0, size = 10), 
+            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
+p1 <- DimPlot(meta_orig) + 
+      labs(title = "Metastatic Tumors") + 
+      scale_color_paletteer_d("miscpalettes::pastel") + 
+      theme_yehlab() + 
+      theme(axis.title = element_blank(), 
+            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
+(p0 | p1) + plot_annotation(caption = "Louvain Clustering", 
+                            theme = theme(plot.caption = element_text(face = "italic")))
 ```
 
 
