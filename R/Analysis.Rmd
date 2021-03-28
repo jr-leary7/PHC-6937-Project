@@ -14,7 +14,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE, 
+                      fig.align = "center")
+options(future.globals.maxSize = 2000 * 1024^2)
 ```
 
 # Introduction
@@ -61,7 +65,7 @@ for (i in seq(sample_dict$Directory)) {
                                    min.cells = 3, 
                                    min.features = 1000)
   seurat_obj <- NormalizeData(object = seurat_obj, verbose = FALSE)
-  seurat_obj <- FindVariableFeatures(object = seurat_obj, verbose = FALSE)
+  seurat_obj <- FindVariableFeatures(object = seurat_obj, nfeatures = 2000, verbose = FALSE)
   obj_list[[i]] <- seurat_obj
 }
 ```
@@ -69,12 +73,16 @@ for (i in seq(sample_dict$Directory)) {
 Next we integrate all the samples into one `Seurat` object. 
 
 ```{r}
-integration_genes <- SelectIntegrationFeatures(object.list = obj_list)
+integration_genes <- SelectIntegrationFeatures(object.list = obj_list, verbose = FALSE)
 integration_anchors <- FindIntegrationAnchors(object.list = obj_list, 
                                               anchor.features = integration_genes, 
                                               verbose = FALSE)
-pdac_orig <- IntegrateData(anchorset = integration_anchors)
+pdac_orig <- IntegrateData(anchorset = integration_anchors, 
+                           k.weight = 50, 
+                           verbose = FALSE)
 ```
+
+
 
 
 # New Methodology
