@@ -69,6 +69,7 @@ for (i in seq(sample_dict$Directory)) {
                                    project = sample_dict$Sample[i], 
                                    min.cells = 3, 
                                    min.features = 1000)
+  seurat_obj@meta.data$sample <- sample_dict$Sample[i]
   seurat_obj <- NormalizeData(object = seurat_obj, verbose = FALSE)
   seurat_obj <- FindVariableFeatures(object = seurat_obj, nfeatures = 2000, verbose = FALSE)
   obj_list[[i]] <- seurat_obj
@@ -181,6 +182,33 @@ p1 <- DimPlot(meta_orig) +
 (p0 | p1) + plot_annotation(caption = "Louvain Clustering", 
                             theme = theme(plot.caption = element_text(face = "italic")))
 ```
+
+
+```{r}
+p2 <- DimPlot(primary_orig, group.by = "sample") + 
+      labs(x = "UMAP 1", y = "UMAP 2", title = "Sample IDs (Primary Tumors)") + 
+      scale_color_paletteer_d("miscpalettes::pastel") + 
+      theme_yehlab() + 
+      theme(axis.title = element_text(hjust = 0, size = 10), 
+            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
+p3 <- DimPlot(meta_orig, group.by = "sample") + 
+      labs(title = "Sample IDs (Metastatic Tumors)") + 
+      scale_color_paletteer_d("miscpalettes::pastel") + 
+      theme_yehlab() + 
+      theme(axis.title = element_blank(), 
+            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
+(p2 | p3) + plot_annotation(caption = "Louvain Clustering", 
+                            theme = theme(plot.caption = element_text(face = "italic")))
+```
+
+
+
+
+
+
+
 
 
 # New Methodology
