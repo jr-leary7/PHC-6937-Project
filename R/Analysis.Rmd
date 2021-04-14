@@ -34,6 +34,7 @@ library(ggpubr)
 library(ggplot2)
 library(SCISSORS)
 library(patchwork)
+library(jackknife)
 library(paletteer)
 library(kableExtra)
 ```
@@ -71,8 +72,10 @@ for (i in seq(sample_dict$Directory)) {
                                    min.cells = 3, 
                                    min.features = 1000)
   seurat_obj@meta.data$sample <- sample_dict$Sample[i]
+  seurat_obj[["percent_MT"]] <- PercentageFeatureSet(seurat_obj, pattern = "^MT-")
   seurat_obj <- SCTransform(seurat_obj, 
                             variable.features.n = 2000, 
+                            vars.to.regress = "percent_MT", 
                             seed.use = 629, 
                             verbose = FALSE)
   obj_list[[i]] <- seurat_obj
@@ -97,14 +100,14 @@ primary_obj <- PrepSCTIntegration(object.list = primary_obj,
 integration_anchors <- FindIntegrationAnchors(object.list = primary_obj, 
                                               normalization.method = "SCT", 
                                               anchor.features = integration_genes)
-primary_orig <- IntegrateData(anchorset = integration_anchors, 
-                              normalization.method = "SCT", 
-                              k.weight = 50,
-                              verbose = FALSE)
-DefaultAssay(primary_orig) <- "integrated"
+primary <- IntegrateData(anchorset = integration_anchors, 
+                         normalization.method = "SCT", 
+                         k.weight = 50,
+                         verbose = FALSE)
+DefaultAssay(primary) <- "integrated"
 ```
 
-And we repeat the process for the metastatic samples. 
+We repeat the process for the metastatic samples. 
 
 ```{r}
 integration_genes <- SelectIntegrationFeatures(object.list = meta_obj, 
@@ -116,39 +119,41 @@ meta_obj <- PrepSCTIntegration(object.list = meta_obj,
 integration_anchors <- FindIntegrationAnchors(object.list = meta_obj, 
                                               normalization.method = "SCT", 
                                               anchor.features = integration_genes)
-meta_orig <- IntegrateData(anchorset = integration_anchors, 
-                           normalization.method = "SCT", 
-                           k.weight = 50,
-                           verbose = FALSE)
-DefaultAssay(meta_orig) <- "integrated"
+meta <- IntegrateData(anchorset = integration_anchors, 
+                      normalization.method = "SCT", 
+                      k.weight = 50,
+                      verbose = FALSE)
+DefaultAssay(meta) <- "integrated"
 ```
 
 # Preprocessing
 
 ## Primary Tumors
 
+We run PCA / UMAP, create the SNN graph representation of our cells, and cluster the cells using Louvain modularity optimization. 
+
 ```{r}
-primary_orig <- RunPCA(primary_orig, 
-                       npcs = 20, 
-                       verbose = FALSE, 
-                       seed.use = 629)
-primary_orig <- RunUMAP(primary_orig, 
-                        reduction = "pca", 
-                        dims = 1:20, 
-                        min.dist = 0.2, 
-                        metric = "cosine", 
-                        n.components = 2, 
-                        seed.use = 629, 
+primary <- RunPCA(primary, 
+                  npcs = 30, 
+                  verbose = FALSE, 
+                  seed.use = 629)
+primary <- RunUMAP(primary, 
+                   reduction = "pca", 
+                   dims = 1:30, 
+                   metric = "cosine",
+                   min.dist = 0.1, 
+                   n.components = 2, 
+                   seed.use = 629, 
+                   verbose = FALSE)
+primary <- FindNeighbors(primary, 
+                         reduction = "pca", 
+                         dims = 1:30, 
+                         annoy.metric = "cosine", 
+                         verbose = FALSE)
+primary <- FindClusters(primary, 
+                        resolution = 0.3, 
+                        random.seed = 629,
                         verbose = FALSE)
-primary_orig <- FindNeighbors(primary_orig, 
-                              reduction = "pca", 
-                              dims = 1:20, 
-                              k.param = 40, 
-                              verbose = FALSE)
-primary_orig <- FindClusters(primary_orig, 
-                             resolution = 0.3, 
-                             random.seed = 629,
-                             verbose = FALSE)
 ```
 
 ## Metastatic Tumors
@@ -156,27 +161,27 @@ primary_orig <- FindClusters(primary_orig,
 Now we repeat the preprocessing on the metastatic tumors. 
 
 ```{r}
-meta_orig <- RunPCA(meta_orig, 
-                    npcs = 20, 
-                    verbose = FALSE, 
-                    seed.use = 629)
-meta_orig <- RunUMAP(meta_orig, 
-                     reduction = "pca", 
-                     dims = 1:20, 
-                     min.dist = 0.075, 
-                     metric = "cosine", 
-                     n.components = 2, 
-                     seed.use = 629, 
-                     verbose = FALSE)
-meta_orig <- FindNeighbors(meta_orig, 
-                           reduction = "pca", 
-                           dims = 1:20, 
-                           k.param = 50, 
-                           verbose = FALSE)
-meta_orig <- FindClusters(meta_orig, 
-                          resolution = 0.3, 
-                          verbose = FALSE, 
-                          random.seed = 629)
+meta <- RunPCA(meta, 
+               npcs = 30, 
+               verbose = FALSE, 
+               seed.use = 629)
+meta <- RunUMAP(meta, 
+                reduction = "pca", 
+                dims = 1:30, 
+                min.dist = 0.05, 
+                metric = "cosine", 
+                n.components = 2, 
+                seed.use = 629, 
+                verbose = FALSE)
+meta <- FindNeighbors(meta, 
+                      reduction = "pca", 
+                      dims = 1:30, 
+                      annoy.metric = "cosine", 
+                      verbose = FALSE)
+meta <- FindClusters(meta, 
+                     resolution = 0.25, 
+                     verbose = FALSE, 
+                     random.seed = 629)
 ```
 
 ## Visualization
@@ -184,25 +189,23 @@ meta_orig <- FindClusters(meta_orig,
 First we visualize the semi-supervised clustering we've generated using Louvain modularity optimization. 
 
 ```{r}
-p0 <- DimPlot(primary_orig) + 
-      labs(x = "UMAP 1", y = "UMAP 2", title = "Primary Tumors") + 
+p0 <- DimPlot(primary) + 
+      labs(title = "Primary Tumors", x = "UMAP 1", y = "UMAP 2") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
       theme(text = element_text(family = "Avenir"), 
-            axis.title = element_text(hjust = 0, size = 10), 
-            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
-      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
-p1 <- DimPlot(meta_orig) + 
+            axis.title.x = element_text(hjust = 0, size = 10), 
+            axis.title.y = element_text(hjust = 0, size = 10), 
+            plot.title = element_text(hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
+p1 <- DimPlot(meta) + 
       labs(title = "Metastatic Tumors") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
       theme(axis.title = element_blank(), 
             text = element_text(family = "Avenir"), 
-            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
-      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
-
-
-
+            plot.title = element_text(hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
 (p0 | p1) + plot_annotation(caption = "Louvain Clustering", 
                             theme = theme(plot.caption = element_text(face = "italic")))
 ```
@@ -210,22 +213,60 @@ p1 <- DimPlot(meta_orig) +
 Next we check out how the samples are arranged in UMAP space. We see that there is next to no grouping by sample, which tells us that the data integration process worked correctly and the sample-related batch effect has been regressed out. 
 
 ```{r}
-p2 <- DimPlot(primary_orig, group.by = "sample") + 
+p2 <- DimPlot(primary, group.by = "sample") + 
       labs(x = "UMAP 1", y = "UMAP 2", title = "Sample IDs (Primary Tumors)") + 
       scale_color_paletteer_d("miscpalettes::pastel") + 
       theme_yehlab() + 
       theme(text = element_text(family = "Avenir"), 
             axis.title = element_text(hjust = 0, size = 10), 
-            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
-      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
-p3 <- DimPlot(meta_orig, group.by = "sample") + 
+            plot.title = element_text(face = "bold", hjust = 0.5, size = 12), 
+            legend.text = element_text(size = 10)) + 
+      guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
+p3 <- DimPlot(meta, group.by = "sample") + 
       labs(title = "Sample IDs (Metastatic Tumors)") + 
       scale_color_paletteer_d("miscpalettes::pastel") + 
       theme_yehlab() + 
       theme(axis.title = element_blank(), text = element_text(family = "Avenir"), 
-            plot.title = element_text(face = "bold", hjust = 0.5, size = 12)) + 
-      guides(color = guide_legend(nrow = 2, override.aes = list(size = 3)))
+            plot.title = element_text(face = "bold", hjust = 0.5, size = 12), 
+            legend.text = element_text(size = 10)) + 
+      guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
 (p2 | p3) + plot_annotation(theme = theme(plot.caption = element_text(face = "italic")))
 ```
 
 # Analysis 
+
+## Differential Expression
+
+### Primary Tumor 
+
+```{r}
+primary_markers <- FindAllMarkers(primary, 
+                                  logfc.threshold = 3, 
+                                  test.use = "wilcox", 
+                                  only.pos = TRUE, 
+                                  random.seed = 629, 
+                                  verbose = FALSE) %>% 
+                   filter(p_val_adj < 0.01)
+primary_markers %>% 
+  group_by(cluster) %>% 
+  top_n(n = 5, wt = avg_log2FC) -> primary_markers_top5
+p4 <- DotPlot(primary, 
+              features = primary_markers_top5$gene, 
+              cols = c("grey70", "firebrick")) + 
+      labs(color = "Mean Expression", size = "Percent Expressed", x = "Gene", y = "Cluster") + 
+      theme(axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1), 
+            axis.title.y = element_text(angle = 360, vjust = 0.5), 
+            legend.position = "bottom", axis.line = element_blank(), 
+            panel.border = element_rect(fill = NA, size = 1, color = "black"), 
+            legend.justification = "center") + 
+      guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(4, "cm")), 
+             size = guide_legend(title.position = "top", title.hjust = 0.5))
+p4
+```
+
+
+### Metastatic Tumor
+
+## Cell Type Identification 
+
+## CNV Estimation 
