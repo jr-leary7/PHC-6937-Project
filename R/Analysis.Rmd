@@ -239,6 +239,8 @@ p3 <- DimPlot(meta, group.by = "sample") +
 
 ### Primary Tumor 
 
+We use a Wilcox test for differential expression, and filter the results after the Bonferroni *p*-value correction at the $q < 0.01$ level. 
+
 ```{r}
 primary_markers <- FindAllMarkers(primary, 
                                   logfc.threshold = 3, 
@@ -251,21 +253,70 @@ primary_markers %>%
   group_by(cluster) %>% 
   top_n(n = 5, wt = avg_log2FC) -> primary_markers_top5
 p4 <- DotPlot(primary, 
-              features = primary_markers_top5$gene, 
-              cols = c("grey70", "firebrick")) + 
-      labs(color = "Mean Expression", size = "Percent Expressed", x = "Gene", y = "Cluster") + 
-      theme(axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1), 
+              cols = c("grey70", "firebrick"), 
+              features = primary_markers_top5$gene) + 
+      labs(x = "Gene", 
+           y = "Cluster", 
+           color = "Mean Expression", 
+           size = "Percent Expressed", 
+           title = "Primary Tumor Marker Genes") + 
+      theme(legend.position = "bottom", 
+            axis.line = element_blank(), 
+            legend.justification = "center", 
+            text = element_text(family = "Avenir"), 
             axis.title.y = element_text(angle = 360, vjust = 0.5), 
-            legend.position = "bottom", axis.line = element_blank(), 
             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
-            legend.justification = "center") + 
-      guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(4, "cm")), 
+            axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1)) + 
+      guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm")), 
              size = guide_legend(title.position = "top", title.hjust = 0.5))
+```
+
+*plot interpretation here*
+
+```{r}
 p4
 ```
 
 
 ### Metastatic Tumor
+
+We perform the same DE test on the metastatic tumor cells. 
+
+```{r}
+meta_markers <- FindAllMarkers(meta, 
+                               logfc.threshold = 3, 
+                               test.use = "wilcox", 
+                               only.pos = TRUE, 
+                               random.seed = 629, 
+                               verbose = FALSE) %>% 
+                filter(p_val_adj < 0.01)
+meta_markers %>% 
+  group_by(cluster) %>% 
+  top_n(n = 5, wt = avg_log2FC) -> meta_markers_top5
+p5 <- DotPlot(meta, 
+              cols = c("grey70", "firebrick"), 
+              features = meta_markers_top5$gene) + 
+      labs(x = "Gene", 
+           y = "Cluster", 
+           color = "Mean Expression", 
+           size = "Percent Expressed", 
+           title = "Metastatic Tumor Marker Genes") + 
+      theme(legend.position = "bottom", 
+            axis.line = element_blank(), 
+            legend.justification = "center", 
+            text = element_text(family = "Avenir"), 
+            axis.title.y = element_text(angle = 360, vjust = 0.5), 
+            panel.border = element_rect(fill = NA, size = 1, color = "black"), 
+            axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1)) + 
+      guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm")), 
+             size = guide_legend(title.position = "top", title.hjust = 0.5))
+```
+
+*next plot interpretation here* 
+
+```{r}
+p5
+```
 
 ## Cell Type Identification 
 
