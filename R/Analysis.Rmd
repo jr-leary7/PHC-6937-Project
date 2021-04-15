@@ -32,6 +32,7 @@ library(dplyr)
 library(Seurat)
 library(ggpubr)
 library(ggplot2)
+library(scRNAseq)
 library(SCISSORS)
 library(patchwork)
 library(jackknife)
@@ -271,12 +272,9 @@ p4 <- DotPlot(primary,
              size = guide_legend(title.position = "top", title.hjust = 0.5))
 ```
 
-*plot interpretation here*
-
 ```{r}
 p4
 ```
-
 
 ### Metastatic Tumor
 
@@ -304,7 +302,9 @@ p5 <- DotPlot(meta,
       theme(legend.position = "bottom", 
             axis.line = element_blank(), 
             legend.justification = "center", 
+            legend.title = element_text(size = 12), 
             text = element_text(family = "Avenir"), 
+            plot.title = element_text(hjust = 0.5), 
             axis.title.y = element_text(angle = 360, vjust = 0.5), 
             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
             axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1)) + 
@@ -312,7 +312,7 @@ p5 <- DotPlot(meta,
              size = guide_legend(title.position = "top", title.hjust = 0.5))
 ```
 
-*next plot interpretation here* 
+We can see TYROBP & C1QA, which are myeloid markers, in cluster 4. Cluster 5 shows CD3D & NKG7; this indicates that the cluster is composed of T/NK cells. Cluster 2 has TOP2A, which is a DC marker. 
 
 ```{r}
 p5
@@ -320,4 +320,73 @@ p5
 
 ## Cell Type Identification 
 
+### SingleR 
+
+We'll use the labeled reference data from Baron *et al* (2016) in order to give broad cell types 
+
+#### Primary Tumor
+
+```{r}
+pdac_ref <- readRDS("/Volumes/labs/Home/Jen Jen Yeh Lab/Jack/scRNAseq/Seurat/single_cell_ref_normalized.Rds")
+cell_preds <- SingleR(test = primary@assays$integrated@scale.data, 
+                      ref = pdac_ref, 
+                      labels = pdac_ref$label, 
+                      clusters = primary$seurat_clusters, 
+                      de.method = "wilcox")
+primary[["SingleR"]] <- cell_preds$labels[match(primary[[]][["seurat_clusters"]], rownames(cell_preds))]
+primary[["SingleR"]] <- case_when(primary[["SingleR"]] == "acinar" ~ "Acinar", 
+                                  primary[["SingleR"]] == "activated_stellate" ~ "Activated Stellate", 
+                                  primary[["SingleR"]] == "ductal" ~ "Ductal", 
+                                  primary[["SingleR"]] == "endothelial" ~ "Endothelial", 
+                                  primary[["SingleR"]] == "macrophage" ~ "Macrophage", 
+                                  primary[["SingleR"]] == "mast" ~ "Mast", 
+                                  primary[["SingleR"]] == "quiescent_stellate" ~ "Quiescent Stellate")
+p6 <- DimPlot(primary, group.by = "SingleR") + 
+      labs(x = "UMAP 1", y = "UMAP 2", subtitle = "Primary Tumor") + 
+      scale_color_paletteer_d("ggthemes::Classic_20") + 
+      theme_yehlab() + 
+      theme(legend.position = "right", 
+            plot.title = element_blank(), 
+            legend.text = element_text(size = 10), 
+            text = element_text(family = "Avenir"), 
+            plot.subtitle = element_text(hjust = 0.5), 
+            axis.title = element_text(hjust = 0, size = 9)) + 
+      guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+```
+
+```{r}
+p6
+```
+
+#### Metastatic Tumor
+
+```{r}
+cell_preds <- SingleR(test = meta@assays$integrated@scale.data, 
+                      ref = pdac_ref, 
+                      labels = pdac_ref$label, 
+                      clusters = meta$seurat_clusters, 
+                      de.method = "wilcox")
+meta[["SingleR"]] <- cell_preds$labels[match(meta[[]][["seurat_clusters"]], rownames(cell_preds))]
+meta[["SingleR"]] <- case_when(meta[["SingleR"]] == "epsilon" ~ "Epsilon", 
+                               meta[["SingleR"]] == "t_cell" ~ "T", 
+                               meta[["SingleR"]] == "ductal" ~ "Ductal", 
+                               meta[["SingleR"]] == "macrophage" ~ "Macrophage")
+p7 <- DimPlot(meta, group.by = "SingleR", cols = paletteer_d("ggthemes::Classic_20")[8:11]) + 
+      labs(subtitle = "Metastatic Tumor") + 
+      theme_yehlab() + 
+      theme(legend.position = "right", 
+            plot.title = element_blank(), 
+            axis.title = element_blank(), 
+            legend.text = element_text(size = 9), 
+            text = element_text(family = "Avenir"), 
+            plot.subtitle = element_text(hjust = 0.5)) + 
+      guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+```
+
+```{r}
+(p7 / p6) + plot_annotation(title = "SingleR Cell Labels", 
+                            theme = theme(plot.title = element_text(family = "Avenir", size = 16, hjust = 0.5)))
+```
+
 ## CNV Estimation 
+
