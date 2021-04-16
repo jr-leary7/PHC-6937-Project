@@ -21,6 +21,7 @@ knitr::opts_chunk$set(echo = TRUE,
                       warning = FALSE, 
                       fig.align = "center")
 options(future.globals.maxSize = 2000 * 1024^2)
+set.seed(312)
 ```
 
 # Introduction
@@ -28,16 +29,17 @@ options(future.globals.maxSize = 2000 * 1024^2)
 # Libaries
 
 ```{r}
-library(dplyr)
-library(Seurat)
-library(ggpubr)
-library(ggplot2)
-library(scRNAseq)
-library(SCISSORS)
-library(patchwork)
-library(jackknife)
-library(paletteer)
-library(kableExtra)
+library(dplyr)       # tidy data
+library(Seurat)      # scRNA-seq infrastructure
+library(ggpubr)      # plot utilities
+library(ggplot2)     # plots
+library(infercnv)    # estimate CNVs
+library(decoderr)    # pathway analysis through NMF
+library(SCISSORS)    # recluster scRNA-seq data
+library(patchwork)   # arrange plots
+library(jackknife)   # my package
+library(paletteer)   # all the palettes
+library(kableExtra)  # table styles
 ```
 
 # Data
@@ -74,8 +76,11 @@ for (i in seq(sample_dict$Directory)) {
                                    min.features = 1000)
   seurat_obj@meta.data$sample <- sample_dict$Sample[i]
   seurat_obj[["percent_MT"]] <- PercentageFeatureSet(seurat_obj, pattern = "^MT-")
+  seurat_obj <- CellCycleScoring(seurat_obj, 
+                                 s.features = cc.genes.updated.2019$s.genes, 
+                                 g2m.features = cc.genes.updated.2019$g2m.genes)
   seurat_obj <- SCTransform(seurat_obj, 
-                            variable.features.n = 2000, 
+                            variable.features.n = 4000, 
                             vars.to.regress = "percent_MT", 
                             seed.use = 629, 
                             verbose = FALSE)
@@ -93,7 +98,7 @@ Next we integrate all the samples into one `Seurat` object. We'll start with the
 
 ```{r}
 integration_genes <- SelectIntegrationFeatures(object.list = primary_obj, 
-                                               nfeatures = 2000, 
+                                               nfeatures = 4000, 
                                                verbose = FALSE)
 primary_obj <- PrepSCTIntegration(object.list = primary_obj, 
                                   anchor.features = integration_genes, 
@@ -112,7 +117,7 @@ We repeat the process for the metastatic samples.
 
 ```{r}
 integration_genes <- SelectIntegrationFeatures(object.list = meta_obj, 
-                                               nfeatures = 2000, 
+                                               nfeatures = 4000, 
                                                verbose = FALSE)
 meta_obj <- PrepSCTIntegration(object.list = meta_obj, 
                                anchor.features = integration_genes, 
@@ -140,7 +145,7 @@ primary <- RunPCA(primary,
                   seed.use = 629)
 primary <- RunUMAP(primary, 
                    reduction = "pca", 
-                   dims = 1:30, 
+                   dims = 1:15, 
                    metric = "cosine",
                    min.dist = 0.1, 
                    n.components = 2, 
@@ -148,13 +153,17 @@ primary <- RunUMAP(primary,
                    verbose = FALSE)
 primary <- FindNeighbors(primary, 
                          reduction = "pca", 
-                         dims = 1:30, 
+                         dims = 1:15, 
+                         k.param = 30, 
                          annoy.metric = "cosine", 
                          verbose = FALSE)
 primary <- FindClusters(primary, 
                         resolution = 0.3, 
                         random.seed = 629,
                         verbose = FALSE)
+DimPlot(primary)
+FeaturePlot(primary, features = "CD34")
+ElbowPlot(primary)
 ```
 
 ## Metastatic Tumors
@@ -322,9 +331,11 @@ p5
 
 ### SingleR 
 
-We'll use the labeled reference data from Baron *et al* (2016) in order to give broad cell types 
+[`SingleR`](https://www.nature.com/articles/s41590-018-0276-y) uses correlation to compare scRNA-seq data to a labeled reference dataset. We'll use the annotated cells from [Baron *et al* (2016)](https://pubmed.ncbi.nlm.nih.gov/27667365/) in order to give broad cell types to our clusters. Note: these should not be considered ground truth, but can help guide our manual annotations. 
 
 #### Primary Tumor
+
+We read in the `SCTransform`-normalized reference dataset, and run `SingleR`. 
 
 ```{r}
 pdac_ref <- readRDS("/Volumes/labs/Home/Jen Jen Yeh Lab/Jack/scRNAseq/Seurat/single_cell_ref_normalized.Rds")
@@ -336,7 +347,7 @@ cell_preds <- SingleR(test = primary@assays$integrated@scale.data,
 primary[["SingleR"]] <- cell_preds$labels[match(primary[[]][["seurat_clusters"]], rownames(cell_preds))]
 primary[["SingleR"]] <- case_when(primary[["SingleR"]] == "acinar" ~ "Acinar", 
                                   primary[["SingleR"]] == "activated_stellate" ~ "Activated Stellate", 
-                                  primary[["SingleR"]] == "ductal" ~ "Ductal", 
+                                  primary[["SingleR"]] == "ductal" ~ "Epithelial", 
                                   primary[["SingleR"]] == "endothelial" ~ "Endothelial", 
                                   primary[["SingleR"]] == "macrophage" ~ "Macrophage", 
                                   primary[["SingleR"]] == "mast" ~ "Mast", 
@@ -349,16 +360,14 @@ p6 <- DimPlot(primary, group.by = "SingleR") +
             plot.title = element_blank(), 
             legend.text = element_text(size = 10), 
             text = element_text(family = "Avenir"), 
-            plot.subtitle = element_text(hjust = 0.5), 
+            plot.subtitle = element_text(), 
             axis.title = element_text(hjust = 0, size = 9)) + 
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
 ```
 
-```{r}
-p6
-```
-
 #### Metastatic Tumor
+
+We'll do the same for the metastatic tumor cells. 
 
 ```{r}
 cell_preds <- SingleR(test = meta@assays$integrated@scale.data, 
@@ -369,7 +378,7 @@ cell_preds <- SingleR(test = meta@assays$integrated@scale.data,
 meta[["SingleR"]] <- cell_preds$labels[match(meta[[]][["seurat_clusters"]], rownames(cell_preds))]
 meta[["SingleR"]] <- case_when(meta[["SingleR"]] == "epsilon" ~ "Epsilon", 
                                meta[["SingleR"]] == "t_cell" ~ "T", 
-                               meta[["SingleR"]] == "ductal" ~ "Ductal", 
+                               meta[["SingleR"]] == "ductal" ~ "Epithelial", 
                                meta[["SingleR"]] == "macrophage" ~ "Macrophage")
 p7 <- DimPlot(meta, group.by = "SingleR", cols = paletteer_d("ggthemes::Classic_20")[8:11]) + 
       labs(subtitle = "Metastatic Tumor") + 
@@ -379,14 +388,117 @@ p7 <- DimPlot(meta, group.by = "SingleR", cols = paletteer_d("ggthemes::Classic_
             axis.title = element_blank(), 
             legend.text = element_text(size = 9), 
             text = element_text(family = "Avenir"), 
-            plot.subtitle = element_text(hjust = 0.5)) + 
+            plot.subtitle = element_text()) + 
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
 ```
 
+Let's check out the results! I really doubt the Epsilon label for the metastatic samples, as Epsilon cells make up around 1% of all pancreatic islet cells. The T cells and Macrophage labels match up with the author's annotations. I would guess that the rest of the cells are split between normal ductal cells and PDAC cells. 
+
+As for the primary tumor cells, we see a Macrophage cluster and an Activated Stellate (read: CAF) cluster which matches the authors' annotations. The acinar cells are most likely mislabeled EMT and Epithelial cells, which we'll investigate furthers. Finally, the Mast cells might be correctly labeled, or they might be another immune celltype. 
+
+authors - metastatic has tumor-infiltrating leukocyte, tumor-associated macro, and epithelial tumor cells
+        - primary has CAFs, DC, epithelial tumor, endothelial, TAMs, TILs, and EMTs
+
 ```{r}
-(p7 / p6) + plot_annotation(title = "SingleR Cell Labels", 
+(p7 / p6) + plot_annotation(title = "SingleR Cell Type Annotations", 
                             theme = theme(plot.title = element_text(family = "Avenir", size = 16, hjust = 0.5)))
 ```
 
+## Pathway Analysis 
+
+### Primary
+
+We'll use [Xianlu Peng's `DECODER` method](https://pubmed.ncbi.nlm.nih.gov/31628300/) in order to perform a pancreas-specific NMF version of pathway analysis, in which each cell is assigned compartment weights for pathways such as Immune, Classical PDAC, etc. 
+
+```{r}
+sample_wts_unscaled <- Decon_single_sample("TCGA_RNAseq_PAAD", 
+                                           primary@assays$integrated@data, 
+                                           "geneSymbol")
+sample_wts <- Norm_PDAC_weights(sample_wts_unscaled)
+primary <- AddMetaData(primary, sample_wts$Immune, "immune")
+primary <- AddMetaData(primary, sample_wts$bcRatio, "bc_ratio")
+primary <- AddMetaData(primary, sample_wts$Endocrine, "endocrine")
+primary <- AddMetaData(primary, sample_wts_unscaled[, 9], "basal")
+primary <- AddMetaData(primary, sample_wts_unscaled[, 5], "classical")
+primary <- AddMetaData(primary, sample_wts$NormalStroma, "norm_stroma")
+primary <- AddMetaData(primary, sample_wts$ActivatedStroma, "act_stroma")
+```
+
+Now let's generate some plots! 
+
+```{r}
+plots <- list()
+vars <- c("immune", "endocrine", "basal", "classical", "norm_stroma", "act_stroma")
+titles <- c("Immune", "Endocrine", "Basal PDAC", "Classical PDAC", "Normal Stroma", "Activated Stroma")
+for (i in seq_along(vars)) {
+  plots[[i]] <- FeaturePlot(primary, features = vars[i], cols = c("grey70", "firebrick")) + 
+                labs(subtitle = titles[i]) + 
+                theme_yehlab() + 
+                theme(legend.position = "none", 
+                      axis.title = element_blank(), 
+                      plot.title = element_blank(), 
+                      plot.title.position = "plot", 
+                      text = element_text(family = "Avenir"), 
+                      plot.subtitle = element_text(hjust = 0.5, size = 12))
+}
+
+p8 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
+      annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Primary Tumor)")
+p8
+```
+
+### Metastatic Tumor
+
+We'll repeat the `DECODER` analysis and plot generation for the metastatic cells. 
+
+```{r}
+sample_wts_unscaled <- Decon_single_sample("TCGA_RNAseq_PAAD", 
+                                           meta@assays$integrated@data, 
+                                           "geneSymbol")
+sample_wts <- Norm_PDAC_weights(sample_wts_unscaled)
+meta <- AddMetaData(meta, sample_wts$Immune, "immune")
+meta <- AddMetaData(meta, sample_wts$bcRatio, "bc_ratio")
+meta <- AddMetaData(meta, sample_wts$Endocrine, "endocrine")
+meta <- AddMetaData(meta, sample_wts_unscaled[, 9], "basal")
+meta <- AddMetaData(meta, sample_wts_unscaled[, 5], "classical")
+meta <- AddMetaData(meta, sample_wts$NormalStroma, "norm_stroma")
+meta <- AddMetaData(meta, sample_wts$ActivatedStroma, "act_stroma")
+```
+
+Now let's generate some plots! 
+
+```{r}
+plots <- list()
+vars <- c("immune", "endocrine", "basal", "classical", "norm_stroma", "act_stroma")
+titles <- c("Immune", "Endocrine", "Basal PDAC", "Classical PDAC", "Normal Stroma", "Activated Stroma")
+for (i in seq_along(vars)) {
+  plots[[i]] <- FeaturePlot(meta, features = vars[i], cols = c("grey70", "firebrick")) + 
+                labs(subtitle = titles[i]) + 
+                theme_yehlab() + 
+                theme(legend.position = "none", 
+                      axis.title = element_blank(), 
+                      plot.title = element_blank(), 
+                      plot.title.position = "plot", 
+                      text = element_text(family = "Avenir"), 
+                      plot.subtitle = element_text(hjust = 0.5, size = 12))
+}
+```
+
+Despite some missing genes, we see 
+
+```{r}
+p9 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
+      annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Metastatic Tumor)")
+p9
+```
+
 ## CNV Estimation 
+
+### InferCNV
+
+set cutoff=0.1 w/ 10X data
+
+```{r}
+
+```
 
