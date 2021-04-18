@@ -32,7 +32,9 @@ set.seed(312)
 library(dplyr)       # tidy data
 library(Seurat)      # scRNA-seq infrastructure
 library(ggpubr)      # plot utilities
+library(celldex)     # RNA-seq reference datasets
 library(ggplot2)     # plots
+library(SingleR)     # cell annotations
 library(infercnv)    # estimate CNVs
 library(decoderr)    # pathway analysis through NMF
 library(SCISSORS)    # recluster scRNA-seq data
@@ -76,9 +78,6 @@ for (i in seq(sample_dict$Directory)) {
                                    min.features = 1000)
   seurat_obj@meta.data$sample <- sample_dict$Sample[i]
   seurat_obj[["percent_MT"]] <- PercentageFeatureSet(seurat_obj, pattern = "^MT-")
-  seurat_obj <- CellCycleScoring(seurat_obj, 
-                                 s.features = cc.genes.updated.2019$s.genes, 
-                                 g2m.features = cc.genes.updated.2019$g2m.genes)
   seurat_obj <- SCTransform(seurat_obj, 
                             variable.features.n = 4000, 
                             vars.to.regress = "percent_MT", 
@@ -110,6 +109,9 @@ primary <- IntegrateData(anchorset = integration_anchors,
                          normalization.method = "SCT", 
                          k.weight = 50,
                          verbose = FALSE)
+primary <- CellCycleScoring(primary, 
+                            s.features = cc.genes.updated.2019$s.genes, 
+                            g2m.features = cc.genes.updated.2019$g2m.genes)
 DefaultAssay(primary) <- "integrated"
 ```
 
@@ -129,6 +131,9 @@ meta <- IntegrateData(anchorset = integration_anchors,
                       normalization.method = "SCT", 
                       k.weight = 50,
                       verbose = FALSE)
+meta <- CellCycleScoring(meta, 
+                         s.features = cc.genes.updated.2019$s.genes, 
+                         g2m.features = cc.genes.updated.2019$g2m.genes)
 DefaultAssay(meta) <- "integrated"
 ```
 
@@ -161,9 +166,6 @@ primary <- FindClusters(primary,
                         resolution = 0.3, 
                         random.seed = 629,
                         verbose = FALSE)
-DimPlot(primary)
-FeaturePlot(primary, features = "CD34")
-ElbowPlot(primary)
 ```
 
 ## Metastatic Tumors
@@ -178,7 +180,7 @@ meta <- RunPCA(meta,
 meta <- RunUMAP(meta, 
                 reduction = "pca", 
                 dims = 1:30, 
-                min.dist = 0.05, 
+                min.dist = 0.05,
                 metric = "cosine", 
                 n.components = 2, 
                 seed.use = 629, 
@@ -189,7 +191,7 @@ meta <- FindNeighbors(meta,
                       annoy.metric = "cosine", 
                       verbose = FALSE)
 meta <- FindClusters(meta, 
-                     resolution = 0.25, 
+                     resolution = 0.15, 
                      verbose = FALSE, 
                      random.seed = 629)
 ```
@@ -253,7 +255,7 @@ We use a Wilcox test for differential expression, and filter the results after t
 
 ```{r}
 primary_markers <- FindAllMarkers(primary, 
-                                  logfc.threshold = 3, 
+                                  logfc.threshold = 2, 
                                   test.use = "wilcox", 
                                   only.pos = TRUE, 
                                   random.seed = 629, 
@@ -274,12 +276,15 @@ p4 <- DotPlot(primary,
             axis.line = element_blank(), 
             legend.justification = "center", 
             text = element_text(family = "Avenir"), 
+            plot.title = element_text(hjust = 0.5), 
             axis.title.y = element_text(angle = 360, vjust = 0.5), 
             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
             axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1)) + 
       guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm")), 
              size = guide_legend(title.position = "top", title.hjust = 0.5))
 ```
+
+Clusters 0 and 1 are partially determined by LYZ & CXCL5, respectively, both of which are markers for Epithelial cells. Cluster 3 has CD68, which is a myeloid marker. 
 
 ```{r}
 p4
@@ -291,7 +296,7 @@ We perform the same DE test on the metastatic tumor cells.
 
 ```{r}
 meta_markers <- FindAllMarkers(meta, 
-                               logfc.threshold = 3, 
+                               logfc.threshold = 2, 
                                test.use = "wilcox", 
                                only.pos = TRUE, 
                                random.seed = 629, 
@@ -317,11 +322,11 @@ p5 <- DotPlot(meta,
             axis.title.y = element_text(angle = 360, vjust = 0.5), 
             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
             axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1)) + 
-      guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm")), 
-             size = guide_legend(title.position = "top", title.hjust = 0.5))
+      guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm"), order = 2), 
+             size = guide_legend(title.position = "top", title.hjust = 0.5, order = 1))
 ```
 
-We can see TYROBP & C1QA, which are myeloid markers, in cluster 4. Cluster 5 shows CD3D & NKG7; this indicates that the cluster is composed of T/NK cells. Cluster 2 has TOP2A, which is a DC marker. 
+We can see C1QA, which is a myeloid marker, in cluster 3. Cluster 4 shows CD3D & NKG7; this indicates that the cluster is composed of T/NK cells. Cluster 2 has TOP2A, which is a DC marker. 
 
 ```{r}
 p5
@@ -329,30 +334,30 @@ p5
 
 ## Cell Type Identification 
 
-### SingleR 
+### SingleR: scRNA-seq Reference
 
-[`SingleR`](https://www.nature.com/articles/s41590-018-0276-y) uses correlation to compare scRNA-seq data to a labeled reference dataset. We'll use the annotated cells from [Baron *et al* (2016)](https://pubmed.ncbi.nlm.nih.gov/27667365/) in order to give broad cell types to our clusters. Note: these should not be considered ground truth, but can help guide our manual annotations. 
+[`SingleR`](https://www.nature.com/articles/s41590-018-0276-y) uses Spearman correlation to compare scRNA-seq data to a labeled reference dataset. We'll use the annotated cells from [Baron *et al* (2016)](https://pubmed.ncbi.nlm.nih.gov/27667365/) in order to give broad cell types to our clusters. Note: these should not be considered ground truth, but can help guide our manual annotations. Also, this dataset can be loaded from the `scRNAseq` package, but I've created a version normalized using `SCTransform` instead og the default log-normalization, to better match the cells we'd like to annotate.
 
 #### Primary Tumor
 
 We read in the `SCTransform`-normalized reference dataset, and run `SingleR`. 
 
 ```{r}
-pdac_ref <- readRDS("/Volumes/labs/Home/Jen Jen Yeh Lab/Jack/scRNAseq/Seurat/single_cell_ref_normalized.Rds")
+sc_ref <- readRDS("/Volumes/labs/Home/Jen Jen Yeh Lab/Jack/scRNAseq/Seurat/single_cell_ref_normalized.Rds")
 cell_preds <- SingleR(test = primary@assays$integrated@scale.data, 
-                      ref = pdac_ref, 
-                      labels = pdac_ref$label, 
+                      ref = sc_ref, 
+                      labels = sc_ref$label, 
                       clusters = primary$seurat_clusters, 
                       de.method = "wilcox")
-primary[["SingleR"]] <- cell_preds$labels[match(primary[[]][["seurat_clusters"]], rownames(cell_preds))]
-primary[["SingleR"]] <- case_when(primary[["SingleR"]] == "acinar" ~ "Acinar", 
-                                  primary[["SingleR"]] == "activated_stellate" ~ "Activated Stellate", 
-                                  primary[["SingleR"]] == "ductal" ~ "Epithelial", 
-                                  primary[["SingleR"]] == "endothelial" ~ "Endothelial", 
-                                  primary[["SingleR"]] == "macrophage" ~ "Macrophage", 
-                                  primary[["SingleR"]] == "mast" ~ "Mast", 
-                                  primary[["SingleR"]] == "quiescent_stellate" ~ "Quiescent Stellate")
-p6 <- DimPlot(primary, group.by = "SingleR") + 
+primary[["SingleR_sc"]] <- cell_preds$labels[match(primary[[]][["seurat_clusters"]], rownames(cell_preds))]
+primary[["SingleR_sc"]] <- case_when(primary[["SingleR_sc"]] == "acinar" ~ "Acinar", 
+                                     primary[["SingleR_sc"]] == "activated_stellate" ~ "Activated Stellate", 
+                                     primary[["SingleR_sc"]] == "ductal" ~ "Epithelial", 
+                                     primary[["SingleR_sc"]] == "endothelial" ~ "Endothelial", 
+                                     primary[["SingleR_sc"]] == "macrophage" ~ "Macrophage", 
+                                     primary[["SingleR_sc"]] == "mast" ~ "Mast", 
+                                     primary[["SingleR_sc"]] == "quiescent_stellate" ~ "Quiescent Stellate")
+p6 <- DimPlot(primary, group.by = "SingleR_sc") + 
       labs(x = "UMAP 1", y = "UMAP 2", subtitle = "Primary Tumor") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
@@ -371,16 +376,17 @@ We'll do the same for the metastatic tumor cells.
 
 ```{r}
 cell_preds <- SingleR(test = meta@assays$integrated@scale.data, 
-                      ref = pdac_ref, 
-                      labels = pdac_ref$label, 
+                      ref = sc_ref, 
+                      labels = sc_ref$label, 
                       clusters = meta$seurat_clusters, 
                       de.method = "wilcox")
-meta[["SingleR"]] <- cell_preds$labels[match(meta[[]][["seurat_clusters"]], rownames(cell_preds))]
-meta[["SingleR"]] <- case_when(meta[["SingleR"]] == "epsilon" ~ "Epsilon", 
-                               meta[["SingleR"]] == "t_cell" ~ "T", 
-                               meta[["SingleR"]] == "ductal" ~ "Epithelial", 
-                               meta[["SingleR"]] == "macrophage" ~ "Macrophage")
-p7 <- DimPlot(meta, group.by = "SingleR", cols = paletteer_d("ggthemes::Classic_20")[8:11]) + 
+meta[["SingleR_sc"]] <- cell_preds$labels[match(meta[[]][["seurat_clusters"]], rownames(cell_preds))]
+meta[["SingleR_sc"]] <- case_when(meta[["SingleR_sc"]] == "acinar" ~ "Acinar", 
+                                  meta[["SingleR_sc"]] == "t_cell" ~ "T", 
+                                  meta[["SingleR_sc"]] == "endothelial" ~ "Endothelial", 
+                                  meta[["SingleR_sc"]] == "macrophage" ~ "Macrophage", 
+                                  meta[["SingleR_sc"]] == "gamma" ~ "Gamma")
+p7 <- DimPlot(meta, group.by = "SingleR_sc", cols = paletteer_d("ggthemes::Classic_20")[8:12]) + 
       labs(subtitle = "Metastatic Tumor") + 
       theme_yehlab() + 
       theme(legend.position = "right", 
@@ -392,23 +398,107 @@ p7 <- DimPlot(meta, group.by = "SingleR", cols = paletteer_d("ggthemes::Classic_
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
 ```
 
-Let's check out the results! I really doubt the Epsilon label for the metastatic samples, as Epsilon cells make up around 1% of all pancreatic islet cells. The T cells and Macrophage labels match up with the author's annotations. I would guess that the rest of the cells are split between normal ductal cells and PDAC cells. 
+Let's check out the results! I really doubt the Gamma label for the metastatic samples, as Gamma cells make up around 3-5% of all pancreatic islet cells. The T cells and Macrophage labels match up with the authors' annotations. I would guess that the rest of the cells are split between normal ductal cells and PDAC cells. 
 
-As for the primary tumor cells, we see a Macrophage cluster and an Activated Stellate (read: CAF) cluster which matches the authors' annotations. The acinar cells are most likely mislabeled EMT and Epithelial cells, which we'll investigate furthers. Finally, the Mast cells might be correctly labeled, or they might be another immune celltype. 
-
-authors - metastatic has tumor-infiltrating leukocyte, tumor-associated macro, and epithelial tumor cells
-        - primary has CAFs, DC, epithelial tumor, endothelial, TAMs, TILs, and EMTs
+As for the primary tumor cells, we see a Macrophage cluster and an Activated Stellate (read: CAF) cluster which matches the authors' annotations. The acinar cells are most likely mislabeled EMT and Epithelial cells, which we'll investigate further. Finally, the small Endothelial cluster roughly matches the size of the Endothelial cluster identified by the authors, though here it's located next to the putative Epithelial cells instead of next to the CAFs as it was in the original publication. 
 
 ```{r}
-(p7 / p6) + plot_annotation(title = "SingleR Cell Type Annotations", 
-                            theme = theme(plot.title = element_text(family = "Avenir", size = 16, hjust = 0.5)))
+(p7 / p6) + plot_annotation(title = "SingleR Annotations", subtitle = "scRNA-seq Reference", 
+                            theme = theme(plot.title = element_text(family = "Avenir", 
+                                                                    size = 16, 
+                                                                    hjust = 0.5), 
+                                          plot.subtitle = element_text(family = "Avenir", 
+                                                                       face = "italic", 
+                                                                       hjust = 0.5, 
+                                                                       size = 9)))
+```
+
+### SingleR: Bulk RNA-seq Reference
+
+We'll perform the same procedure, this time using a bulk RNA-seq reference - data from the Human Primary Cell Atlas. 
+
+```{r}
+bulk_ref <- HumanPrimaryCellAtlasData()
+
+```
+
+#### Primary Tumor
+
+We run `SingleR` again, this time using the bulk reference. 
+
+```{r}
+cell_preds <- SingleR(test = primary@assays$integrated@scale.data, 
+                      ref = bulk_ref, 
+                      labels = bulk_ref$label.main, 
+                      clusters = primary$seurat_clusters, 
+                      de.method = "wilcox")
+primary[["SingleR_bulk"]] <- cell_preds$labels[match(primary[[]][["seurat_clusters"]], rownames(cell_preds))]
+primary[["SingleR_bulk"]] <- case_when(primary[["SingleR_bulk"]] == "Epithelial_cells" ~ "Epithelial", 
+                                       primary[["SingleR_bulk"]] == "Endothelial_cells" ~ "Endothelial", 
+                                       primary[["SingleR_bulk"]] == "Fibroblasts" ~ "Fibroblast", 
+                                       primary[["SingleR_bulk"]] == "Neutrophils" ~ "Neutrophil", 
+                                       primary[["SingleR_bulk"]] == "Macrophage" ~ "Macrophage", 
+                                       primary[["SingleR_bulk"]] == "BM & Prog." ~ "Bone Marrow Progenitor")
+p8 <- DimPlot(primary, group.by = "SingleR_bulk") + 
+      labs(x = "UMAP 1", y = "UMAP 2", subtitle = "Primary Tumor") + 
+      scale_color_paletteer_d("ggthemes::Classic_20") + 
+      theme_yehlab() + 
+      theme(legend.position = "right", 
+            plot.title = element_blank(), 
+            legend.text = element_text(size = 10), 
+            text = element_text(family = "Avenir"), 
+            plot.subtitle = element_text(), 
+            axis.title = element_text(hjust = 0, size = 9)) + 
+      guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+```
+
+#### Metastatic Tumor
+
+We'll do the same for the metastatic tumor cells. 
+
+```{r}
+cell_preds <- SingleR(test = meta@assays$integrated@scale.data, 
+                      ref = bulk_ref, 
+                      labels = bulk_ref$label.main, 
+                      clusters = meta$seurat_clusters, 
+                      de.method = "wilcox")
+meta[["SingleR_bulk"]] <- cell_preds$labels[match(meta[[]][["seurat_clusters"]], rownames(cell_preds))]
+meta[["SingleR_bulk"]] <- case_when(meta[["SingleR_bulk"]] == "Epithelial_cells" ~ "Epithelial", 
+                                  meta[["SingleR_bulk"]] == "Monocyte" ~ "Monocyte", 
+                                  meta[["SingleR_bulk"]] == "T_cells" ~ "T", 
+                                  meta[["SingleR_bulk"]] == "Neurons" ~ "Neuron")
+p9 <- DimPlot(meta, group.by = "SingleR_bulk", cols = paletteer_d("ggthemes::Classic_20")[8:11]) + 
+      labs(subtitle = "Metastatic Tumor") + 
+      theme_yehlab() + 
+      theme(legend.position = "right", 
+            plot.title = element_blank(), 
+            axis.title = element_blank(), 
+            legend.text = element_text(size = 9), 
+            text = element_text(family = "Avenir"), 
+            plot.subtitle = element_text()) + 
+      guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+```
+
+Let's check out the results! For the primary tumor sample: we can be fairly certain that the large Epithelial cluster identity is correct, as we saw it in the single cell and bulk reference annotations. I think the Bone Marrow Progenitor cluster is most likely the Epithelial $\rightarrow$ Mesenchymal cluster the authors annotated. The Fibroblast & Endothelial cluster identities also line up with what we saw in the single cell annotations. Lastly, I'm interested in the annotation of the Neutrophil cluster, as that's something the authors did not annotate. 
+
+For the metastatic samples, we see again the small T & Macrophage clusters. We can be pretty sure that those are correct. I trust that the large Epithelial cluster is correct, though I'm puzzled as to why the final cluster was annotated as containing Neurons. The single cell reference defined that cluster as Endothelial. We'll have to do some further investigation on that group of cells. 
+
+```{r}
+(p9 / p8) + plot_annotation(title = "SingleR Annotations", subtitle = "Bulk RNA-seq Reference", 
+                            theme = theme(plot.title = element_text(family = "Avenir", 
+                                                                    size = 16, 
+                                                                    hjust = 0.5), 
+                                          plot.subtitle = element_text(family = "Avenir", 
+                                                                       face = "italic", 
+                                                                       hjust = 0.5, 
+                                                                       size = 9)))
 ```
 
 ## Pathway Analysis 
 
 ### Primary
 
-We'll use [Xianlu Peng's `DECODER` method](https://pubmed.ncbi.nlm.nih.gov/31628300/) in order to perform a pancreas-specific NMF version of pathway analysis, in which each cell is assigned compartment weights for pathways such as Immune, Classical PDAC, etc. 
+We'll use [Xianlu Peng's `DECODER` method](https://pubmed.ncbi.nlm.nih.gov/31628300/) in order to perform a pancreas-specific NMF version of pathway analysis, in which each cell is assigned compartment weights for pathways such as Immune, Classical PDAC, etc. The PDAC subtypes used here, Basal & Classical, are taken from [Moffitt *et al* (2015)](https://www.nature.com/articles/ng.3398). 
 
 ```{r}
 sample_wts_unscaled <- Decon_single_sample("TCGA_RNAseq_PAAD", 
@@ -424,7 +514,7 @@ primary <- AddMetaData(primary, sample_wts$NormalStroma, "norm_stroma")
 primary <- AddMetaData(primary, sample_wts$ActivatedStroma, "act_stroma")
 ```
 
-Now let's generate some plots! 
+Now let's generate some plots! We see that the Immune & Fibroblast scores correspond with what we saw in `SingleR`. Interestingly, it appears as though the PDAC scores are high in only one of the Epithelial clusters (Cluster 1). This leads me to believe that there are potential subclusters within the cluster, and that the other cluster is composed of normal, non-malignant Epithelial cells. 
 
 ```{r}
 plots <- list()
@@ -442,9 +532,9 @@ for (i in seq_along(vars)) {
                       plot.subtitle = element_text(hjust = 0.5, size = 12))
 }
 
-p8 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
-      annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Primary Tumor)")
-p8
+p10 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
+       annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Primary Tumor)")
+p10
 ```
 
 ### Metastatic Tumor
@@ -484,12 +574,12 @@ for (i in seq_along(vars)) {
 }
 ```
 
-Despite some missing genes, we see 
+Despite some missing genes, we see that our T & Macrophage annotations match the Immune weights, and that the Basal & Classical PDAC scores are located in the putative Epithelial clusters. Specifically, the Basal PDAC weights are highest in the odd cluster that was annotated as Gamma / Neuron cells by `SingleR`. 
 
 ```{r}
-p9 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
-      annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Metastatic Tumor)")
-p9
+p11 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
+       annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Metastatic Tumor)")
+p11
 ```
 
 ## CNV Estimation 
