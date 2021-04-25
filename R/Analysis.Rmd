@@ -357,7 +357,7 @@ primary[["SingleR_sc"]] <- case_when(primary[["SingleR_sc"]] == "acinar" ~ "Acin
                                      primary[["SingleR_sc"]] == "macrophage" ~ "Macrophage", 
                                      primary[["SingleR_sc"]] == "mast" ~ "Mast", 
                                      primary[["SingleR_sc"]] == "quiescent_stellate" ~ "Quiescent Stellate")
-p6 <- DimPlot(primary, group.by = "SingleR_sc") + 
+p6 <- DimPlot(primary, group.by = "SingleR") + 
       labs(x = "UMAP 1", y = "UMAP 2", subtitle = "Primary Tumor") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
@@ -445,7 +445,7 @@ p8 <- DimPlot(primary, group.by = "SingleR_bulk") +
       theme_yehlab() + 
       theme(legend.position = "right", 
             plot.title = element_blank(), 
-            legend.text = element_text(size = 10), 
+            legend.text = element_text(size = 9), 
             text = element_text(family = "Avenir"), 
             plot.subtitle = element_text(), 
             axis.title = element_text(hjust = 0, size = 9)) + 
@@ -494,11 +494,11 @@ For the metastatic samples, we see again the small T & Macrophage clusters. We c
                                                                        size = 9)))
 ```
 
-## Pathway Analysis 
+### Pathway Analysis 
 
-### Primary
+#### Primary
 
-We'll use [Xianlu Peng's `DECODER` method](https://pubmed.ncbi.nlm.nih.gov/31628300/) in order to perform a pancreas-specific NMF version of pathway analysis, in which each cell is assigned compartment weights for pathways such as Immune, Classical PDAC, etc. The PDAC subtypes used here, Basal & Classical, are taken from [Moffitt *et al* (2015)](https://www.nature.com/articles/ng.3398). 
+We'll use [Dr. Xianlu Peng's `DECODER` method](https://pubmed.ncbi.nlm.nih.gov/31628300/) in order to perform a pancreas-specific NMF version of pathway analysis, in which each cell is assigned compartment weights for pathways such as Immune, Classical PDAC, etc. The PDAC subtypes used here, Basal & Classical, are taken from [Moffitt *et al* (2015)](https://www.nature.com/articles/ng.3398). 
 
 ```{r}
 sample_wts_unscaled <- Decon_single_sample("TCGA_RNAseq_PAAD", 
@@ -537,7 +537,7 @@ p10 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>%
 p10
 ```
 
-### Metastatic Tumor
+#### Metastatic Tumor
 
 We'll repeat the `DECODER` analysis and plot generation for the metastatic cells. 
 
@@ -582,13 +582,191 @@ p11 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>%
 p11
 ```
 
-## CNV Estimation 
+### Assign Broad Cell Types
 
-### InferCNV
+We have enough information to accurately assign broad cell types to our clusters. 
 
-set cutoff=0.1 w/ 10X data
+#### Primary Tumor
 
 ```{r}
+primary$cell_type <- case_when(primary$seurat_clusters == 0 ~ "Epithelial", 
+                               primary$seurat_clusters == 1 ~ "Epithelial", 
+                               primary$seurat_clusters == 2 ~ "Fibroblast", 
+                               primary$seurat_clusters == 3 ~ "Macrophage", 
+                               primary$seurat_clusters == 4 ~ "Neutrophil", 
+                               primary$seurat_clusters == 5 ~ "Mesenchymal Stem Cell", 
+                               primary$seurat_clusters == 6 ~ "Fibroblast", 
+                               primary$seurat_clusters == 7 ~ "Endothelial")
+```
 
+#### Metastatic Tumor
+
+```{r}
+meta$cell_type <- case_when(meta$seurat_clusters == 0 ~ "Epithelial", 
+                            meta$seurat_clusters == 1 ~ "Epithelial", 
+                            meta$seurat_clusters == 2 ~ "Epithelial", 
+                            meta$seurat_clusters == 3 ~ "Macrophage", 
+                            meta$seurat_clusters == 4 ~ "T")
+```
+
+### CNV Estimation
+
+Next we'll attempt to identify malignant cells using single-cell copy number variation estimation as implemented in the `CONCISmat` package. Details of the GMM methodology used can be found [at the Diaz Lab's GitHub repository](https://github.com/diazlab/CONICS).
+
+#### Primary Tumor
+
+```{r}
+chrom_regions <- read.table("/Volumes/labs/Home/Jen Jen Yeh Lab/Jack/scRNAseq/chrom_arm_positions.txt", 
+                            sep = "\t", 
+                            row.names = 1, 
+                            header = TRUE)
+gene_pos <- getGenePositions(rownames(primary))
+cpm <- t(t(as.matrix(primary@assays$SCT@counts)) / colSums(as.matrix(primary@assays$SCT@counts))) * 10^5
+cpm <- log2(cpm + 1)
+norm_factor <- calcNormFactors(cpm)
+cnv_est <- plotAll(mat = cpm, 
+                   normFactor = norm_factor, 
+                   regions = chrom_regions, 
+                   gene_pos = gene_pos, 
+                   fname = "../Data/Primary")
+bic_table <- read.table("../Data/Primary_BIC_LR.txt", 
+                        sep = "\t", 
+                        row.names = 1, 
+                        header = TRUE, 
+                        check.names = FALSE)
+cand_regions <- rownames(bic_table[bic_table$`BIC difference` > 200 & bic_table$`LRT adj. p-val` < .01, ])
+```
+
+We use $k = 3$ clusters, as we assume that the cells can be divided into 1) PDAC cells, 2) CAF cells, and 3) non-malignant cells. We see that chromosomes 9q, 12q, and 17q have the most estimated CNVs. 
+
+```{r}
+hist1 <- plotHistogram(cnv_est[, cand_regions], 
+                       cpm, 
+                       clusters = 3, 
+                       zscoreThreshold = 3, 
+                       celltypes = primary$cell_type, 
+                       patients = primary$sample)
+```
+
+```{r}
+normal_primary <- which(hist1 == 1)
+primary@meta.data$CNV <- ifelse(rownames(primary@meta.data) %in% names(normal_primary), 
+                                "Normal", "Malignant")
+p12 <- DimPlot(primary, group.by = "CNV") + 
+       labs(subtitle = "Primary Tumor") + 
+       theme_yehlab() + 
+       theme(legend.position = "none", 
+             plot.title = element_blank(), 
+             axis.title = element_blank(), 
+             text = element_text(family = "Avenir"), 
+             plot.subtitle = element_text(hjust = 0.5))
+```
+
+#### Metastatic Tumor
+
+We repeat the process for the metastatic tumor samples. 
+
+```{r}
+gene_pos <- getGenePositions(rownames(meta))
+cpm <- t(t(as.matrix(meta@assays$SCT@counts)) / colSums(as.matrix(meta@assays$SCT@counts))) * 10^5
+cpm <- log2(cpm + 1)
+norm_factor <- calcNormFactors(cpm)
+cnv_est <- plotAll(mat = cpm, 
+                   normFactor = norm_factor, 
+                   regions = chrom_regions, 
+                   gene_pos = gene_pos, 
+                   fname = "../Data/Meta")
+bic_table <- read.table("../Data/Meta_BIC_LR.txt", 
+                        sep = "\t", 
+                        row.names = 1, 
+                        header = TRUE, 
+                        check.names = FALSE)
+cand_regions <- rownames(bic_table[bic_table$`BIC difference` > 200 & bic_table$`LRT adj. p-val` < .01, ])
+```
+
+We see that chromosomes 2p, 7q, 12q, and 15q have the most estimated CNVs for the metastatic samples. 
+
+```{r}
+hist2 <- plotHistogram(cnv_est[, cand_regions], 
+                       cpm, 
+                       clusters = 3, 
+                       zscoreThreshold = 3, 
+                       celltypes = meta$cell_type, 
+                       patients = meta$sample)
+```
+
+```{r}
+normal_meta <- which(hist2 == 3)
+meta@meta.data$CNV <- ifelse(rownames(meta@meta.data) %in% names(normal_meta), 
+                             "Normal", "Malignant")
+p13 <- DimPlot(meta, group.by = "CNV") + 
+       labs(subtitle = "Metastatic Tumor") + 
+       theme_yehlab() + 
+       theme(legend.position = "none", 
+             plot.title = element_blank(), 
+             axis.title = element_blank(), 
+             text = element_text(family = "Avenir"), 
+             plot.subtitle = element_text(hjust = 0.5))
+```
+
+Let's check out the results! We see that the cells estimated to be malignant are mostly located in the Epithelial clusters. This is what we'd expect from Pancreatic *Ductal* Adenocarcinoma. Notably, we don't see a significant concentration of malignant cells in the Fibroblast cluster from the primary samples. This makes me doubt the authors' annotation of those cells as Cancer Associated Fibroblasts (CAFs). 
+
+```{r}
+(p12 | p13) + plot_annotation(title = "Malignant Cells Identified Using Estimated CNVs", 
+                              theme = theme(text = element_text(family = "Avenir"), 
+                                            plot.title = element_text(hjust = 0.5)))
+```
+
+### Reclustering Cells
+
+Lastly, we'll use my method, `SCISSORS` to determine whether separate Basal & Classical PDAC clusters exist in the PDAC cluster (Cluster 1) present in the primary tumor samples. 
+
+```{r}
+pdac_reclust <- ReclusterCells(seurat.object = primary, 
+                               which.clust = 1, 
+                               n.HVG = 3000, 
+                               n.PC = 10, 
+                               k.vals = c(5, 10, 20), 
+                               resolution.vals = c(.3, .4, .5), 
+                               redo.embedding = TRUE, 
+                               random.seed = 629)
+DimPlot(pdac_reclust)
+FeaturePlot(pdac_reclust, features = "classical")
+FeaturePlot(pdac_reclust, features = "act_stroma")
+```
+
+
+### Assign Cell Types
+
+Finally, we have enough information to accurately assign cell types to our clusters. 
+
+#### Primary Tumor
+
+```{r}
+primary$cell_type <- case_when(primary$seurat_clusters == 0 ~ "Epithelial", 
+                               primary$seurat_clusters == 1 ~ "Epithelial", 
+                               primary$seurat_clusters == 2 ~ "Fibroblast", 
+                               primary$seurat_clusters == 3 ~ "Macrophage", 
+                               primary$seurat_clusters == 4 ~ "Neutrophil", 
+                               primary$seurat_clusters == 5 ~ "Mesenchymal Stem Cell", 
+                               primary$seurat_clusters == 6 ~ "Fibroblast", 
+                               primary$seurat_clusters == 7 ~ "Endothelial")
+```
+
+#### Metastatic Tumor
+
+```{r}
+meta$cell_type <- case_when(meta$seurat_clusters == 0 ~ "Epithelial", 
+                            meta$seurat_clusters == 1 ~ "Epithelial", 
+                            meta$seurat_clusters == 2 ~ "Epithelial", 
+                            meta$seurat_clusters == 3 ~ "Macrophage", 
+                            meta$seurat_clusters == 4 ~ "T")
+```
+
+# Save Results
+
+```{r}
+saveRDS(primary, file = "~/Desktop/primary.Rds")
+saveRDS(meta, file = "~/Desktop/meta.Rds")
 ```
 
