@@ -35,9 +35,9 @@ library(ggpubr)      # plot utilities
 library(celldex)     # RNA-seq reference datasets
 library(ggplot2)     # plots
 library(SingleR)     # cell annotations
-library(infercnv)    # estimate CNVs
 library(decoderr)    # pathway analysis through NMF
 library(SCISSORS)    # recluster scRNA-seq data
+library(CONICSmat)   # estimate CNVs
 library(patchwork)   # arrange plots
 library(jackknife)   # my package
 library(paletteer)   # all the palettes
@@ -205,8 +205,7 @@ p0 <- DimPlot(primary) +
       labs(title = "Primary Tumors", x = "UMAP 1", y = "UMAP 2") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
-      theme(text = element_text(family = "Avenir"), 
-            axis.title.x = element_text(hjust = 0, size = 10), 
+      theme(axis.title.x = element_text(hjust = 0, size = 10), 
             axis.title.y = element_text(hjust = 0, size = 10), 
             plot.title = element_text(hjust = 0.5, size = 12)) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
@@ -215,7 +214,6 @@ p1 <- DimPlot(meta) +
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
       theme(axis.title = element_blank(), 
-            text = element_text(family = "Avenir"), 
             plot.title = element_text(hjust = 0.5, size = 12)) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
 (p0 | p1) + plot_annotation(caption = "Louvain Clustering", 
@@ -229,8 +227,7 @@ p2 <- DimPlot(primary, group.by = "sample") +
       labs(x = "UMAP 1", y = "UMAP 2", title = "Sample IDs (Primary Tumors)") + 
       scale_color_paletteer_d("miscpalettes::pastel") + 
       theme_yehlab() + 
-      theme(text = element_text(family = "Avenir"), 
-            axis.title = element_text(hjust = 0, size = 10), 
+      theme(axis.title = element_text(hjust = 0, size = 10), 
             plot.title = element_text(face = "bold", hjust = 0.5, size = 12), 
             legend.text = element_text(size = 10)) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
@@ -238,7 +235,7 @@ p3 <- DimPlot(meta, group.by = "sample") +
       labs(title = "Sample IDs (Metastatic Tumors)") + 
       scale_color_paletteer_d("miscpalettes::pastel") + 
       theme_yehlab() + 
-      theme(axis.title = element_blank(), text = element_text(family = "Avenir"), 
+      theme(axis.title = element_blank(), 
             plot.title = element_text(face = "bold", hjust = 0.5, size = 12), 
             legend.text = element_text(size = 10)) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
@@ -275,7 +272,6 @@ p4 <- DotPlot(primary,
       theme(legend.position = "bottom", 
             axis.line = element_blank(), 
             legend.justification = "center", 
-            text = element_text(family = "Avenir"), 
             plot.title = element_text(hjust = 0.5), 
             axis.title.y = element_text(angle = 360, vjust = 0.5), 
             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
@@ -316,8 +312,6 @@ p5 <- DotPlot(meta,
       theme(legend.position = "bottom", 
             axis.line = element_blank(), 
             legend.justification = "center", 
-            legend.title = element_text(size = 12), 
-            text = element_text(family = "Avenir"), 
             plot.title = element_text(hjust = 0.5), 
             axis.title.y = element_text(angle = 360, vjust = 0.5), 
             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
@@ -364,7 +358,6 @@ p6 <- DimPlot(primary, group.by = "SingleR") +
       theme(legend.position = "right", 
             plot.title = element_blank(), 
             legend.text = element_text(size = 10), 
-            text = element_text(family = "Avenir"), 
             plot.subtitle = element_text(), 
             axis.title = element_text(hjust = 0, size = 9)) + 
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
@@ -393,7 +386,6 @@ p7 <- DimPlot(meta, group.by = "SingleR_sc", cols = paletteer_d("ggthemes::Class
             plot.title = element_blank(), 
             axis.title = element_blank(), 
             legend.text = element_text(size = 9), 
-            text = element_text(family = "Avenir"), 
             plot.subtitle = element_text()) + 
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
 ```
@@ -404,13 +396,8 @@ As for the primary tumor cells, we see a Macrophage cluster and an Activated Ste
 
 ```{r}
 (p7 / p6) + plot_annotation(title = "SingleR Annotations", subtitle = "scRNA-seq Reference", 
-                            theme = theme(plot.title = element_text(family = "Avenir", 
-                                                                    size = 16, 
-                                                                    hjust = 0.5), 
-                                          plot.subtitle = element_text(family = "Avenir", 
-                                                                       face = "italic", 
-                                                                       hjust = 0.5, 
-                                                                       size = 9)))
+                            theme = theme(plot.title = element_text(size = 16, hjust = 0.5), 
+                                          plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 9)))
 ```
 
 ### SingleR: Bulk RNA-seq Reference
@@ -446,7 +433,6 @@ p8 <- DimPlot(primary, group.by = "SingleR_bulk") +
       theme(legend.position = "right", 
             plot.title = element_blank(), 
             legend.text = element_text(size = 9), 
-            text = element_text(family = "Avenir"), 
             plot.subtitle = element_text(), 
             axis.title = element_text(hjust = 0, size = 9)) + 
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
@@ -474,7 +460,6 @@ p9 <- DimPlot(meta, group.by = "SingleR_bulk", cols = paletteer_d("ggthemes::Cla
             plot.title = element_blank(), 
             axis.title = element_blank(), 
             legend.text = element_text(size = 9), 
-            text = element_text(family = "Avenir"), 
             plot.subtitle = element_text()) + 
       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
 ```
@@ -485,13 +470,8 @@ For the metastatic samples, we see again the small T & Macrophage clusters. We c
 
 ```{r}
 (p9 / p8) + plot_annotation(title = "SingleR Annotations", subtitle = "Bulk RNA-seq Reference", 
-                            theme = theme(plot.title = element_text(family = "Avenir", 
-                                                                    size = 16, 
-                                                                    hjust = 0.5), 
-                                          plot.subtitle = element_text(family = "Avenir", 
-                                                                       face = "italic", 
-                                                                       hjust = 0.5, 
-                                                                       size = 9)))
+                            theme = theme(plot.title = element_text(size = 16, hjust = 0.5), 
+                                          plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 9)))
 ```
 
 ### Pathway Analysis 
@@ -528,12 +508,12 @@ for (i in seq_along(vars)) {
                       axis.title = element_blank(), 
                       plot.title = element_blank(), 
                       plot.title.position = "plot", 
-                      text = element_text(family = "Avenir"), 
                       plot.subtitle = element_text(hjust = 0.5, size = 12))
 }
 
 p10 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
-       annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Primary Tumor)")
+       annotate_figure(bottom = "UMAP 1", left = text_grob("UMAP 2", rot = 360), 
+                       top = "DECODER Pathway Analysis (Primary Tumor)")
 p10
 ```
 
@@ -569,7 +549,6 @@ for (i in seq_along(vars)) {
                       axis.title = element_blank(), 
                       plot.title = element_blank(), 
                       plot.title.position = "plot", 
-                      text = element_text(family = "Avenir"), 
                       plot.subtitle = element_text(hjust = 0.5, size = 12))
 }
 ```
@@ -578,7 +557,8 @@ Despite some missing genes, we see that our T & Macrophage annotations match the
 
 ```{r}
 p11 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
-       annotate_figure(bottom = "UMAP 1", left = "UMAP 2", top = "DECODER Pathway Analysis (Metastatic Tumor)")
+       annotate_figure(bottom = "UMAP 1", left = text_grob("UMAP 2", rot = 360), 
+                       top = "DECODER Pathway Analysis (Metastatic Tumor)")
 p11
 ```
 
@@ -658,8 +638,8 @@ p12 <- DimPlot(primary, group.by = "CNV") +
        theme(legend.position = "none", 
              plot.title = element_blank(), 
              axis.title = element_blank(), 
-             text = element_text(family = "Avenir"), 
              plot.subtitle = element_text(hjust = 0.5))
+p12
 ```
 
 #### Metastatic Tumor
@@ -705,34 +685,39 @@ p13 <- DimPlot(meta, group.by = "CNV") +
        theme(legend.position = "none", 
              plot.title = element_blank(), 
              axis.title = element_blank(), 
-             text = element_text(family = "Avenir"), 
              plot.subtitle = element_text(hjust = 0.5))
 ```
 
-Let's check out the results! We see that the cells estimated to be malignant are mostly located in the Epithelial clusters. This is what we'd expect from Pancreatic *Ductal* Adenocarcinoma. Notably, we don't see a significant concentration of malignant cells in the Fibroblast cluster from the primary samples. This makes me doubt the authors' annotation of those cells as Cancer Associated Fibroblasts (CAFs). 
+Let's check out the results! We see that the cells estimated to be malignant are mostly located in the Epithelial clusters. This is what we'd expect from Pancreatic *Ductal* Adenocarcinoma. There are also a decent amount of malignant cells in the MSC cluster we identified. Notably, we don't see a significant concentration of malignant cells in the Fibroblast cluster from the primary samples. This makes me doubt the authors' annotation of those cells as Cancer Associated Fibroblasts (CAFs). 
 
 ```{r}
-(p12 | p13) + plot_annotation(title = "Malignant Cells Identified Using Estimated CNVs", 
-                              theme = theme(text = element_text(family = "Avenir"), 
-                                            plot.title = element_text(hjust = 0.5)))
+ggarrange(p12, p13, ncol = 2) %>% 
+  annotate_figure(bottom = "UMAP 1", left = text_grob("UMAP 2", rot = 360), 
+                  top = "Malignant Cells Estimated Through CONICSmat")
 ```
 
 ### Reclustering Cells
 
-Lastly, we'll use my method, `SCISSORS` to determine whether separate Basal & Classical PDAC clusters exist in the PDAC cluster (Cluster 1) present in the primary tumor samples. 
+Lastly, we'll use my method, `SCISSORS`, to determine whether separate Basal & Classical PDAC clusters exist in the PDAC cluster (Cluster 1) present in the primary tumor samples. The method re-processes the data and tests several clustering parameter sets in order to determine which parameter set fits the cells the best. This is done by maximizing the mean silhouette score for each cluster. 
 
 ```{r}
 pdac_reclust <- ReclusterCells(seurat.object = primary, 
                                which.clust = 1, 
                                n.HVG = 3000, 
-                               n.PC = 10, 
-                               k.vals = c(5, 10, 20), 
-                               resolution.vals = c(.3, .4, .5), 
+                               n.PC = 15, 
+                               k.vals = c(20, 30, 40), 
+                               resolution.vals = c(.2, .3, .4), 
                                redo.embedding = TRUE, 
                                random.seed = 629)
+
+p14 <- DimPlot(pdac_reclust) + 
+       labs(subtitle = "Reclustering of Cluster 1") + 
+       theme_yehlab() + 
+       theme(plot.subtitle = element_text(hjust = 0.5))
+p14
 DimPlot(pdac_reclust)
 FeaturePlot(pdac_reclust, features = "classical")
-FeaturePlot(pdac_reclust, features = "act_stroma")
+FeaturePlot(pdac_reclust, features = "basal")
 ```
 
 
