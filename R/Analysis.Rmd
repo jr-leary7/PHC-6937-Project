@@ -104,7 +104,8 @@ primary_obj <- PrepSCTIntegration(object.list = primary_obj,
                                   verbose = FALSE)
 integration_anchors <- FindIntegrationAnchors(object.list = primary_obj, 
                                               normalization.method = "SCT", 
-                                              anchor.features = integration_genes)
+                                              anchor.features = integration_genes, 
+                                              verbose = FALSE)
 primary <- IntegrateData(anchorset = integration_anchors, 
                          normalization.method = "SCT", 
                          k.weight = 50,
@@ -126,7 +127,8 @@ meta_obj <- PrepSCTIntegration(object.list = meta_obj,
                                verbose = FALSE)
 integration_anchors <- FindIntegrationAnchors(object.list = meta_obj, 
                                               normalization.method = "SCT", 
-                                              anchor.features = integration_genes)
+                                              anchor.features = integration_genes, 
+                                              verbose = FALSE)
 meta <- IntegrateData(anchorset = integration_anchors, 
                       normalization.method = "SCT", 
                       k.weight = 50,
@@ -202,44 +204,47 @@ First we visualize the semi-supervised clustering we've generated using Louvain 
 
 ```{r}
 p0 <- DimPlot(primary) + 
-      labs(title = "Primary Tumors", x = "UMAP 1", y = "UMAP 2") + 
+      labs(subtitle = "Primary Tumor", x = "UMAP 1", y = "UMAP 2") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
       theme(axis.title.x = element_text(hjust = 0, size = 10), 
             axis.title.y = element_text(hjust = 0, size = 10), 
-            plot.title = element_text(hjust = 0.5, size = 12)) + 
+            plot.subtitle = element_text(hjust = 0.5, size = 12)) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
-p1 <- DimPlot(meta) + 
-      labs(title = "Metastatic Tumors") + 
-      scale_color_paletteer_d("ggthemes::Classic_20") + 
+p1 <- DimPlot(meta, cols = paletteer_d("ggthemes::Classic_20")[8:12]) + 
+      labs(subtitle = "Metastatic Tumor") + 
       theme_yehlab() + 
       theme(axis.title = element_blank(), 
-            plot.title = element_text(hjust = 0.5, size = 12)) + 
-      guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
-(p0 | p1) + plot_annotation(caption = "Louvain Clustering", 
-                            theme = theme(plot.caption = element_text(face = "italic")))
+            plot.subtitle = element_text(hjust = 0.5, size = 12)) + 
+      guides(color = guide_legend(nrow = 1, byrow = TRUE, override.aes = list(size = 3)))
+(p0 | p1) + plot_annotation(title = "Louvain Clustering", 
+                            theme = theme(plot.title = element_text(hjust = 0.5)))
 ```
 
 Next we check out how the samples are arranged in UMAP space. We see that there is next to no grouping by sample, which tells us that the data integration process worked correctly and the sample-related batch effect has been regressed out. 
 
 ```{r}
 p2 <- DimPlot(primary, group.by = "sample") + 
-      labs(x = "UMAP 1", y = "UMAP 2", title = "Sample IDs (Primary Tumors)") + 
+      labs(x = "UMAP 1", y = "UMAP 2", subtitle = "Primary Tumor") + 
       scale_color_paletteer_d("miscpalettes::pastel") + 
       theme_yehlab() + 
       theme(axis.title = element_text(hjust = 0, size = 10), 
-            plot.title = element_text(face = "bold", hjust = 0.5, size = 12), 
-            legend.text = element_text(size = 10)) + 
+            plot.subtitle = element_text(hjust = 0.5), 
+            legend.text = element_text(size = 10), 
+            plot.title = element_blank()) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
 p3 <- DimPlot(meta, group.by = "sample") + 
-      labs(title = "Sample IDs (Metastatic Tumors)") + 
+      labs(subtitle = "Metastatic Tumor") + 
       scale_color_paletteer_d("miscpalettes::pastel") + 
       theme_yehlab() + 
       theme(axis.title = element_blank(), 
-            plot.title = element_text(face = "bold", hjust = 0.5, size = 12), 
-            legend.text = element_text(size = 10)) + 
+            plot.subtitle = element_text(hjust = 0.5), 
+            legend.text = element_text(size = 10), 
+            plot.title = element_blank()) + 
       guides(color = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 3)))
-(p2 | p3) + plot_annotation(theme = theme(plot.caption = element_text(face = "italic")))
+(p2 | p3) + plot_annotation(title = "Sample IDs", 
+                            theme = theme(plot.caption = element_text(face = "italic"), 
+                                          plot.title = element_text(hjust= 0.5)))
 ```
 
 # Analysis 
@@ -351,7 +356,7 @@ primary[["SingleR_sc"]] <- case_when(primary[["SingleR_sc"]] == "acinar" ~ "Acin
                                      primary[["SingleR_sc"]] == "macrophage" ~ "Macrophage", 
                                      primary[["SingleR_sc"]] == "mast" ~ "Mast", 
                                      primary[["SingleR_sc"]] == "quiescent_stellate" ~ "Quiescent Stellate")
-p6 <- DimPlot(primary, group.by = "SingleR") + 
+p6 <- DimPlot(primary, group.by = "SingleR_sc") + 
       labs(x = "UMAP 1", y = "UMAP 2", subtitle = "Primary Tumor") + 
       scale_color_paletteer_d("ggthemes::Classic_20") + 
       theme_yehlab() + 
@@ -392,7 +397,7 @@ p7 <- DimPlot(meta, group.by = "SingleR_sc", cols = paletteer_d("ggthemes::Class
 
 Let's check out the results! I really doubt the Gamma label for the metastatic samples, as Gamma cells make up around 3-5% of all pancreatic islet cells. The T cells and Macrophage labels match up with the authors' annotations. I would guess that the rest of the cells are split between normal ductal cells and PDAC cells. 
 
-As for the primary tumor cells, we see a Macrophage cluster and an Activated Stellate (read: CAF) cluster which matches the authors' annotations. The acinar cells are most likely mislabeled EMT and Epithelial cells, which we'll investigate further. Finally, the small Endothelial cluster roughly matches the size of the Endothelial cluster identified by the authors, though here it's located next to the putative Epithelial cells instead of next to the CAFs as it was in the original publication. 
+As for the primary tumor cells, we see a Macrophage cluster and an Activated Stellate (read: CAF) cluster which matches the authors' annotations. The acinar cells are interesting, as the authors noted that one of the tumor cluster was enriched for acinar marker genes. Most likely though, they are truly Epithelial cells which we'll investigate further. Finally, the small Endothelial cluster roughly matches the size of the Endothelial cluster identified by the authors, though here it's located next to the putative Epithelial cells instead of next to the CAFs as it was in the original publication. 
 
 ```{r}
 (p7 / p6) + plot_annotation(title = "SingleR Annotations", subtitle = "scRNA-seq Reference", 
@@ -406,7 +411,6 @@ We'll perform the same procedure, this time using a bulk RNA-seq reference - dat
 
 ```{r}
 bulk_ref <- HumanPrimaryCellAtlasData()
-
 ```
 
 #### Primary Tumor
@@ -510,7 +514,6 @@ for (i in seq_along(vars)) {
                       plot.title.position = "plot", 
                       plot.subtitle = element_text(hjust = 0.5, size = 12))
 }
-
 p10 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
        annotate_figure(bottom = "UMAP 1", left = text_grob("UMAP 2", rot = 360), 
                        top = "DECODER Pathway Analysis (Primary Tumor)")
@@ -553,7 +556,7 @@ for (i in seq_along(vars)) {
 }
 ```
 
-Despite some missing genes, we see that our T & Macrophage annotations match the Immune weights, and that the Basal & Classical PDAC scores are located in the putative Epithelial clusters. Specifically, the Basal PDAC weights are highest in the odd cluster that was annotated as Gamma / Neuron cells by `SingleR`. 
+Despite some missing genes, we see that our T & Macrophage annotations match the Immune weights, and that the Basal & Classical PDAC scores are located in the putative Epithelial clusters. Specifically, the Basal PDAC weights are highest in the odd cluster that was annotated as Gamma / Neuron cells by `SingleR`. All three Epithelial clusters, though, do have either Basal or Classical PDAC cells in them. 
 
 ```{r}
 p11 <- ggarrange(plotlist = plots, ncol = 3, nrow = 2) %>% 
@@ -639,7 +642,6 @@ p12 <- DimPlot(primary, group.by = "CNV") +
              plot.title = element_blank(), 
              axis.title = element_blank(), 
              plot.subtitle = element_text(hjust = 0.5))
-p12
 ```
 
 #### Metastatic Tumor
@@ -698,26 +700,124 @@ ggarrange(p12, p13, ncol = 2) %>%
 
 ### Reclustering Cells
 
-Lastly, we'll use my method, `SCISSORS`, to determine whether separate Basal & Classical PDAC clusters exist in the PDAC cluster (Cluster 1) present in the primary tumor samples. The method re-processes the data and tests several clustering parameter sets in order to determine which parameter set fits the cells the best. This is done by maximizing the mean silhouette score for each cluster. 
+#### Primary Tumor - Epithelial Cells
+
+Lastly, we'll use my method, `SCISSORS`, to determine whether separate Basal & Classical PDAC clusters exist in the PDAC cluster (Cluster 1) present in the primary tumor samples. The method re-processes the data and tests several clustering parameter sets in order to determine which parameter set fits the cells the best. This is done by maximizing the mean silhouette score for each cluster. Here we run the method and generate some plots of the results.
 
 ```{r}
-pdac_reclust <- ReclusterCells(seurat.object = primary, 
-                               which.clust = 1, 
-                               n.HVG = 3000, 
-                               n.PC = 15, 
-                               k.vals = c(20, 30, 40), 
-                               resolution.vals = c(.2, .3, .4), 
-                               redo.embedding = TRUE, 
-                               random.seed = 629)
+epi_reclust <- ReclusterCells(seurat.object = primary, 
+                              which.clust = 1, 
+                              n.HVG = 3000, 
+                              n.PC = 15, 
+                              k.vals = c(20, 30, 40), 
+                              resolution.vals = c(.2, .3, .4), 
+                              redo.embedding = TRUE, 
+                              random.seed = 629)
 
-p14 <- DimPlot(pdac_reclust) + 
-       labs(subtitle = "Reclustering of Cluster 1") + 
+p14 <- DimPlot(epi_reclust) + 
+       labs(subtitle = "SCISSORS - Cluster 1") + 
        theme_yehlab() + 
-       theme(plot.subtitle = element_text(hjust = 0.5))
-p14
-DimPlot(pdac_reclust)
-FeaturePlot(pdac_reclust, features = "classical")
-FeaturePlot(pdac_reclust, features = "basal")
+       theme(legend.position = "none", 
+             plot.subtitle = element_text(hjust = 0.5), 
+             axis.title = element_blank()) + 
+       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+p15 <- FeaturePlot(epi_reclust, features = "classical", cols = c("grey90", "firebrick")) + 
+       labs(subtitle = "Classical PDAC") + 
+       theme_yehlab() + 
+       theme(legend.position = "none",
+             axis.title = element_blank(), 
+             plot.title = element_blank(), 
+             plot.subtitle = element_text(hjust = 0.5))
+p16 <- FeaturePlot(epi_reclust, features = "basal", cols = c("grey90", "firebrick")) + 
+       labs(subtitle = "Basal PDAC") + 
+       theme_yehlab() + 
+       theme(legend.position = "none",
+             axis.title = element_blank(), 
+             plot.title = element_blank(), 
+             plot.subtitle = element_text(hjust = 0.5))
+p0a <- p0 + 
+       labs(subtitle = "Primary Tumor") + 
+       theme(axis.title.y = element_blank(), 
+             axis.title.x = element_blank(), 
+             plot.title = element_blank(), 
+             legend.position = "right", 
+             plot.subtitle = element_text(hjust = 0.5)) + 
+       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+p17 <- (p14 | p0a) / (p15 | p16)
+```
+
+We see that while it's possible to find subclusters within Cluster 1, the "best" clustering does not separate out the Basal & Classical components of the PDAC cluster. 
+
+```{r}
+ggarrange(p17) %>% 
+  annotate_figure(bottom = "UMAP 1", left = text_grob("UMAP 2", rot = 360))
+```
+
+#### Primary Tumor - Fibroblasts
+
+Lastly, we saw in the `DECODER` results that one corner of the Fibroblast cluster in the primary tumor cells had high Endocrine weights. We'll run `SCISSORS` on that cluster (Cluster 2) in order to see if subgroups can be extracted. 
+
+```{r}
+fibro_reclust <- ReclusterCells(seurat.object = primary, 
+                                which.clust = 2, 
+                                n.HVG = 3000, 
+                                n.PC = 15, 
+                                k.vals = c(10, 20, 30), 
+                                resolution.vals = c(.2, .3, .4), 
+                                redo.embedding = TRUE, 
+                                random.seed = 629)
+fibro_markers <- FindAllMarkers(fibro_reclust, 
+                                test.use = "wilcox", 
+                                logfc.threshold = 2, 
+                                only.pos = TRUE, 
+                                verbose = FALSE, 
+                                random.seed = 629)
+```
+
+We generate some plots of the results. 
+
+```{r}
+p18 <- DimPlot(fibro_reclust) + 
+       labs(subtitle = "SCISSORS - Cluster 2") + 
+       theme_yehlab() + 
+       theme(legend.position = "none", 
+             plot.subtitle = element_text(hjust = 0.5), 
+             axis.title = element_blank()) + 
+       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+p19 <- FeaturePlot(fibro_reclust, features = "act_stroma", cols = c("grey90", "firebrick")) + 
+       labs(subtitle = "Activated Stroma") + 
+       theme_yehlab() + 
+       theme(legend.position = "none",
+             axis.title = element_blank(), 
+             plot.title = element_blank(), 
+             plot.subtitle = element_text(hjust = 0.5))
+p20 <- FeaturePlot(fibro_reclust, features = "endocrine", cols = c("grey90", "firebrick")) + 
+       labs(subtitle = "Endocrine") + 
+       theme_yehlab() + 
+       theme(legend.position = "none",
+             axis.title = element_blank(), 
+             plot.title = element_blank(), 
+             plot.subtitle = element_text(hjust = 0.5))
+p21 <- (p18 | p0a) / (p19 | p20)
+```
+
+We see two clusters - one of which clearly corresponds to Activated Stroma / CAF cells, and the other of which seems so be composed of islet cells, as they have high endocrine pancreas scores. 
+
+```{r}
+ggarrange(p21) %>% 
+  annotate_figure(bottom = "UMAP 1", left = text_grob("UMAP 2", rot = 360))
+```
+
+The top 5 markers for each cluster are a mixture of proto-oncogenes and stroma-related genes. 
+
+```{r}
+fibro_markers %>% 
+  dplyr::select(cluster, gene, avg_log2FC, p_val_adj, pct.1, pct.2) %>% 
+  group_by(cluster) %>% 
+  slice_head(n = 5) %>% 
+  kbl(booktabs = TRUE, col.names = c("Cluster", "Gene", "Mean Log2FC", 
+                                     "Adj. P-value", "% Expressed 1", "% Expressed 2")) %>% 
+  kable_minimal("hover", full_width = FALSE)
 ```
 
 
@@ -728,30 +828,130 @@ Finally, we have enough information to accurately assign cell types to our clust
 #### Primary Tumor
 
 ```{r}
-primary$cell_type <- case_when(primary$seurat_clusters == 0 ~ "Epithelial", 
-                               primary$seurat_clusters == 1 ~ "Epithelial", 
-                               primary$seurat_clusters == 2 ~ "Fibroblast", 
-                               primary$seurat_clusters == 3 ~ "Macrophage", 
-                               primary$seurat_clusters == 4 ~ "Neutrophil", 
-                               primary$seurat_clusters == 5 ~ "Mesenchymal Stem Cell", 
-                               primary$seurat_clusters == 6 ~ "Fibroblast", 
-                               primary$seurat_clusters == 7 ~ "Endothelial")
+endocrine <- names(fibro_reclust$seurat_clusters[fibro_reclust$seurat_clusters == 1])
+CAF <- names(fibro_reclust$seurat_clusters[fibro_reclust$seurat_clusters == 0])
+primary$cell_type <- case_when(rownames(primary@meta.data) %in% endocrine ~ "Endocrine", 
+                               rownames(primary@meta.data) %in% CAF ~ "CAF", 
+                               primary$seurat_clusters == 1 ~ "PDAC", 
+                               TRUE ~ primary$cell_type)
+Idents(primary) <- "cell_type"
+p22 <- DimPlot(primary, group.by = "cell_type") + 
+       scale_color_paletteer_d("ggthemes::Classic_20") + 
+       labs(subtitle = "Primary Tumor", x = "UMAP 1", y = "UMAP 2") + 
+       theme_yehlab() + 
+       theme(legend.position = "right", 
+             plot.title = element_blank(), 
+             legend.text = element_text(size = 10), 
+             plot.subtitle = element_text(), 
+             axis.title = element_text(hjust = 0, size = 9)) + 
+       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
 ```
 
 #### Metastatic Tumor
 
 ```{r}
-meta$cell_type <- case_when(meta$seurat_clusters == 0 ~ "Epithelial", 
-                            meta$seurat_clusters == 1 ~ "Epithelial", 
-                            meta$seurat_clusters == 2 ~ "Epithelial", 
+meta$cell_type <- case_when(meta$seurat_clusters == 0 ~ "PDAC", 
+                            meta$seurat_clusters == 1 ~ "PDAC", 
+                            meta$seurat_clusters == 2 ~ "PDAC", 
                             meta$seurat_clusters == 3 ~ "Macrophage", 
                             meta$seurat_clusters == 4 ~ "T")
+Idents(meta) <- "cell_type"
+p23 <- DimPlot(meta, group.by = "cell_type", cols = paletteer_d("ggthemes::Classic_20")[c(6, 9, 11)]) + 
+       labs(subtitle = "Metastatic Tumor") + 
+       theme_yehlab() + 
+       theme(legend.position = "right", 
+             plot.title = element_blank(), 
+             axis.title = element_blank(), 
+             legend.text = element_text(size = 9), 
+             plot.subtitle = element_text()) + 
+       guides(color = guide_legend(ncol = 1, override.aes = list(size = 3)))
+```
+
+Let's check out the final results! 
+
+```{r}
+(p23 / p22) + plot_annotation(title = "Final Celltype Labels", 
+                              theme = theme(plot.title = element_text(size = 16, hjust = 0.5)))
+```
+
+## Differential Expression 
+
+Lastly, we'll run differential expression tests again using our final cell labels this time instead of our cluster identities.
+
+### Primary Tumor 
+
+```{r}
+primary_markers_final <- FindAllMarkers(primary, 
+                                        logfc.threshold = 2, 
+                                        test.use = "wilcox", 
+                                        verbose = FALSE, 
+                                        only.pos = TRUE, 
+                                        random.seed = 629)
+primary_markers_final_top5 <- primary_markers_final %>% 
+                              group_by(cluster) %>% 
+                              slice_head(n = 5)
+p24 <- DotPlot(primary, features = primary_markers_final_top5$gene, cols = c("grey90", "firebrick")) + 
+       labs(x = "Gene", 
+            y = "Cell", 
+            color = "Mean Expression", 
+            size = "Percent Expressed", 
+            title = "Primary Tumor Marker Genes") + 
+       theme(legend.position = "bottom", 
+             axis.line = element_blank(), 
+             legend.justification = "center", 
+             plot.title = element_text(hjust = 0.5), 
+             axis.title.y = element_blank(), 
+             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
+             axis.text.x = element_text(angle = 45, size = 7.5, vjust = 1, hjust = 1), 
+             axis.text.y = element_text(size = 8)) + 
+       guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm")), 
+              size = guide_legend(title.position = "top", title.hjust = 0.5))
+```
+
+Our primary tumor clusters are fairly well-separated. 
+
+```{r}
+p24
+```
+
+### Metastatic Tumor 
+
+```{r}
+meta_markers_final <- FindAllMarkers(meta, 
+                                     logfc.threshold = 2, 
+                                     test.use = "wilcox", 
+                                     verbose = FALSE, 
+                                     only.pos = TRUE, 
+                                     random.seed = 629)
+meta_markers_final_top7 <- meta_markers_final %>% 
+                           group_by(cluster) %>% 
+                           slice_head(n = 7)
+p25 <- DotPlot(meta, features = unique(meta_markers_final_top7$gene), cols = c("grey90", "firebrick")) + 
+       labs(x = "Gene", 
+            y = "Cluster", 
+            color = "Mean Expression", 
+            size = "Percent Expressed", 
+            title = "Metastatic Tumor Marker Genes") + 
+       theme(legend.position = "bottom", 
+             axis.line = element_blank(), 
+             legend.justification = "center", 
+             plot.title = element_text(hjust = 0.5), 
+             axis.title.y = element_blank(), 
+             panel.border = element_rect(fill = NA, size = 1, color = "black"), 
+             axis.text.x = element_text(angle = 45, size = 8, vjust = 1, hjust = 1)) + 
+       guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barwidth = unit(5, "cm")), 
+              size = guide_legend(title.position = "top", title.hjust = 0.5))
+```
+
+We also have good separation between celltypes for the metastatic samples. 
+
+```{r}
+p25
 ```
 
 # Save Results
 
-```{r}
+```{r, eval=FALSE}
 saveRDS(primary, file = "~/Desktop/primary.Rds")
 saveRDS(meta, file = "~/Desktop/meta.Rds")
 ```
-
